@@ -104,7 +104,7 @@ function doGet(e) {
   }
   
   if (action === "getOrders") {
-    var sheet = getOrCreateSheet(ss, SHEET_NAME_ORDERS, ["id", "timestamp", "items", "total", "status", "paymentStatus"]);
+    var sheet = getOrCreateSheet(ss, SHEET_NAME_ORDERS, ["id", "timestamp", "items", "total", "status", "paymentStatus", "table", "slipImage"]);
     var data = getSheetData(sheet);
     data.forEach(function(row) {
       try {
@@ -141,18 +141,18 @@ function doPost(e) {
   }
   
   if (action === "saveOrdersList") {
-    var sheet = getOrCreateSheet(ss, SHEET_NAME_ORDERS, ["id", "timestamp", "items", "total", "status", "paymentStatus"]);
+    var sheet = getOrCreateSheet(ss, SHEET_NAME_ORDERS, ["id", "timestamp", "items", "total", "status", "paymentStatus", "table", "slipImage"]);
     clearSheetData(sheet);
     var ordersList = postData.data || [];
     ordersList.forEach(function(order) {
       var itemsStr = JSON.stringify(order.items);
-      sheet.appendRow([order.id, order.timestamp, itemsStr, order.total, order.status, order.paymentStatus]);
+      sheet.appendRow([order.id, order.timestamp, itemsStr, order.total, order.status, order.paymentStatus, order.table || "ทั่วไป", order.slipImage || ""]);
     });
     return jsonResponse({ success: true });
   }
   
   if (action === "saveOrder") {
-    var sheet = getOrCreateSheet(ss, SHEET_NAME_ORDERS, ["id", "timestamp", "items", "total", "status", "paymentStatus"]);
+    var sheet = getOrCreateSheet(ss, SHEET_NAME_ORDERS, ["id", "timestamp", "items", "total", "status", "paymentStatus", "table", "slipImage"]);
     var order = postData.data;
     
     var rows = sheet.getDataRange().getValues();
@@ -165,7 +165,7 @@ function doPost(e) {
     }
     
     var itemsStr = JSON.stringify(order.items);
-    var rowData = [order.id, order.timestamp, itemsStr, order.total, order.status, order.paymentStatus];
+    var rowData = [order.id, order.timestamp, itemsStr, order.total, order.status, order.paymentStatus, order.table || "ทั่วไป", order.slipImage || ""];
     
     if (foundIndex !== -1) {
       var range = sheet.getRange(foundIndex, 1, 1, rowData.length);
@@ -800,6 +800,18 @@ function renderOrdersBoard(ordersList) {
     // Determine card styling based on payment
     const borderStyle = isPaid ? 'border-color: var(--success);' : 'border-color: var(--warning);';
 
+    let slipHtml = '';
+    if (order.slipImage) {
+      slipHtml = `
+        <div class="order-slip-preview mt-2" style="margin-top: 0.75rem; border-top: 1px dashed var(--border-color); padding-top: 0.75rem; text-align: center;">
+          <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; text-align: left; color: var(--text-muted);">สลิปโอนเงินของลูกค้า:</div>
+          <a href="${order.slipImage}" target="_blank" title="คลิกเพื่อดูรูปภาพสลิปเต็ม">
+            <img src="${order.slipImage}" style="max-width: 100%; max-height: 180px; object-fit: contain; border-radius: var(--radius-md); border: 1px solid var(--border-color); cursor: pointer;" onerror="this.onerror=null; this.src='https://placehold.co/120x160/f1f5f9/94a3b8?text=SlipNotFound';">
+          </a>
+        </div>
+      `;
+    }
+
     return `
       <div class="order-card" style="${borderStyle}">
         <div class="order-card-header">
@@ -816,6 +828,7 @@ function renderOrdersBoard(ordersList) {
           <span>ยอดรวม:</span>
           <span>฿${order.total.toLocaleString()}</span>
         </div>
+        ${slipHtml}
         <div class="order-actions mt-4">
           ${actionButtons}
         </div>
@@ -1061,10 +1074,17 @@ function renderStats() {
       let paymentStatusBadge = '';
       if (order.paymentStatus === 'paid') {
         paymentStatusBadge = '<span class="text-success" style="font-weight:600;"><i class="fa-solid fa-circle-check"></i> ชำระแล้ว</span>';
+        if (order.slipImage) {
+          paymentStatusBadge += `<br><a href="${order.slipImage}" target="_blank" style="font-size: 0.75rem; text-decoration: underline; color: var(--success-hover);"><i class="fa-solid fa-image"></i> ดูสลิปโอนเงิน</a>`;
+        }
       } else if (order.status === 'cancelled') {
         paymentStatusBadge = '<span class="text-danger" style="font-weight:600;"><i class="fa-solid fa-ban"></i> ยกเลิกออเดอร์</span>';
       } else {
         paymentStatusBadge = '<span class="text-primary" style="font-weight:600;"><i class="fa-solid fa-clock"></i> รอชำระเงิน</span>';
+        if (order.slipImage) {
+          paymentStatusBadge = '<span class="text-warning" style="font-weight:600;"><i class="fa-solid fa-file-invoice-dollar"></i> ส่งสลิปแล้ว</span>';
+          paymentStatusBadge += `<br><a href="${order.slipImage}" target="_blank" style="font-size: 0.75rem; text-decoration: underline; color: var(--warning);"><i class="fa-solid fa-image"></i> ดูสลิปโอนเงิน</a>`;
+        }
       }
 
       return `

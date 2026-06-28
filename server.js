@@ -261,7 +261,7 @@ app.get('/api/orders', async (req, res) => {
 
 // Create Order (customer adds order)
 app.post('/api/orders', async (req, res) => {
-  const { items } = req.body;
+  const { items, table } = req.body;
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'No items in order' });
   }
@@ -346,7 +346,9 @@ app.post('/api/orders', async (req, res) => {
     items: orderItems,
     total: total,
     status: 'pending', // pending, completed, cancelled
-    paymentStatus: 'unpaid' // unpaid, paid
+    paymentStatus: 'unpaid', // unpaid, paid
+    table: table || 'ทั่วไป',
+    slipImage: ''
   };
 
   orders.push(newOrder);
@@ -358,10 +360,10 @@ app.post('/api/orders', async (req, res) => {
   res.json(newOrder);
 });
 
-// Update Order (Admin pays, cancels, completes, etc.)
+// Update Order (Admin/Customer pays, cancels, completes, etc.)
 app.put('/api/orders/:id', async (req, res) => {
   const { id } = req.params;
-  const { status, paymentStatus } = req.body;
+  const { status, paymentStatus, slipImage } = req.body;
   const orders = readLocal(ORDERS_PATH);
 
   const orderIndex = orders.findIndex(o => o.id === id);
@@ -412,13 +414,15 @@ app.put('/api/orders/:id', async (req, res) => {
   orders[orderIndex] = {
     ...orders[orderIndex],
     status: status !== undefined ? status : orders[orderIndex].status,
-    paymentStatus: paymentStatus !== undefined ? paymentStatus : orders[orderIndex].paymentStatus
+    paymentStatus: paymentStatus !== undefined ? paymentStatus : orders[orderIndex].paymentStatus,
+    slipImage: slipImage !== undefined ? slipImage : orders[orderIndex].slipImage
   };
 
   orders.forEach(order => {
      if (order.id === id) {
        order.status = orders[orderIndex].status;
        order.paymentStatus = orders[orderIndex].paymentStatus;
+       order.slipImage = orders[orderIndex].slipImage;
      }
   });
 

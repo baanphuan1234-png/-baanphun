@@ -657,16 +657,144 @@ function renderOrderStatusDetails(order) {
       </div>
     ` : ''}
 
+    ${order.status !== 'cancelled' && order.paymentStatus === 'unpaid' ? `
+      <div id="order-qr-container" style="text-align: center; margin-top: 1rem; display: none;"></div>
+      
+      ${order.slipImage ? `
+        <div style="text-align: center; margin-top: 1rem; border: 1.5px solid var(--border-color); padding: 1.25rem; border-radius: var(--radius-lg); background: var(--bg-input);">
+          <div style="font-weight: 600; font-size: 0.95rem; color: var(--success); margin-bottom: 0.75rem;"><i class="fa-solid fa-circle-check"></i> ส่งสลิปโอนเงินแล้ว</div>
+          <img src="${order.slipImage}" style="max-width: 100%; max-height: 220px; object-fit: contain; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 0.75rem; box-shadow: var(--shadow-sm);" onerror="this.onerror=null; this.src='https://placehold.co/200x200/f1f5f9/94a3b8?text=SlipNotFound';">
+          <div class="slip-upload-wrapper">
+            <label for="slip-file-input" class="btn btn-outline btn-sm slip-label" style="cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; font-size: 0.8rem;">
+              <i class="fa-solid fa-cloud-arrow-up"></i> เปลี่ยนสลิปใหม่
+            </label>
+            <input type="file" id="slip-file-input" accept="image/*" style="display: none;" onchange="uploadPaymentSlip(event, '${order.id}')">
+          </div>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem; font-weight: 500;">สถานะ: รอแอดมินยืนยันยอดเงิน</div>
+        </div>
+      ` : `
+        <div class="slip-upload-wrapper" style="text-align: center; margin-top: 1rem; border: 2px dashed var(--border-color); padding: 1.5rem; border-radius: var(--radius-lg); background-color: var(--bg-card); cursor: pointer; transition: border-color var(--transition);">
+          <label for="slip-file-input" class="slip-label" style="cursor: pointer; display: block; width: 100%;">
+            <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2.25rem; color: var(--primary); margin-bottom: 0.5rem;"></i>
+            <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-main);">อัปโหลดสลิปเพื่อยืนยันเงินโอน</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">เมื่อโอนเงินแล้วกรุณาแนบภาพสลิปที่นี่</div>
+          </label>
+          <input type="file" id="slip-file-input" accept="image/*" style="display: none;" onchange="uploadPaymentSlip(event, '${order.id}')">
+        </div>
+      `}
+    ` : ''}
+
     ${order.status === 'completed' && order.paymentStatus === 'paid' ? `
       <div class="alert-box alert-success text-center" style="flex-direction: column; gap: 0.25rem;">
         <span><i class="fa-solid fa-circle-check"></i> ออเดอร์และชำระเงินเรียบร้อยแล้ว</span>
         <button class="btn btn-outline btn-sm mt-4" style="width: 100%; border-color: var(--success); color: var(--success-hover);" onclick="clearSavedOrder()">สั่งใหม่อีกครั้ง / ล้างประวัติ</button>
       </div>
     ` : `
-      <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center;">เมื่อชำระเงินที่ร้านเสร็จสิ้น แอดมินจะกดยืนยันการรับชำระเงิน หน้านี้จะอัปเดตโดยอัตโนมัติ</p>
+      <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center; margin-top: 1rem;">เมื่อชำระเงินเรียบร้อยแล้วและแอดมินกดยืนยันการรับชำระเงิน หน้านี้จะอัปเดตโดยอัตโนมัติ</p>
     `}
   `;
+
+  if (order.paymentStatus === 'unpaid' && order.status !== 'cancelled') {
+    setTimeout(() => loadOrderPaymentQR(order.id, order.total), 50);
+  }
 }
+
+// Load QR code dynamically for the customer
+async function loadOrderPaymentQR(orderId, total) {
+  const qrContainer = document.getElementById('order-qr-container');
+  if (!qrContainer) return;
+  
+  qrContainer.style.display = 'block';
+  qrContainer.innerHTML = `
+    <div style="padding: 1rem; text-align: center; color: var(--text-muted);">
+      <i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem;"></i>
+      <p style="font-size: 0.85rem; margin-top: 0.5rem;">กำลังสร้าง QR Code พร้อมเพย์...</p>
+    </div>
+  `;
+  
+  try {
+    const response = await fetch(`/api/promptpay-qr?amount=${total}`);
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+    
+    qrContainer.innerHTML = `
+      <div style="background-color: white; border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 1.25rem; display: inline-block; margin-bottom: 0.75rem; text-align: center; width: 100%; max-width: 280px; box-shadow: var(--shadow-sm); margin-left: auto; margin-right: auto;">
+        <img src="${result.qrImage}" style="width: 100%; max-width: 220px; aspect-ratio: 1; display: block; margin: 0 auto 0.75rem auto;" alt="PromptPay QR Code">
+        <div style="font-size: 1.35rem; font-weight: 700; color: #0f172a; margin-bottom: 0.25rem;">฿${total.toLocaleString()}</div>
+        <div style="font-size: 0.75rem; color: #64748b; font-weight: 600;">สแกนเพื่อจ่ายเงิน</div>
+      </div>
+      <div style="margin-bottom: 1.25rem; display: flex; flex-direction: column; gap: 0.5rem; align-items: center;">
+        <a class="btn btn-outline btn-sm" style="display: inline-flex; align-items: center; gap: 0.5rem; border-color: var(--primary); color: var(--primary);" href="${result.qrImage}" download="PromptPay-QR-${orderId.slice(-6)}.png">
+          <i class="fa-solid fa-download"></i> บันทึกรูปภาพ QR Code
+        </a>
+      </div>
+    `;
+  } catch (err) {
+    qrContainer.innerHTML = `
+      <div style="color: var(--danger); font-size: 0.85rem; padding: 1rem; border: 1px solid var(--danger); border-radius: var(--radius-md); background: rgba(239, 68, 68, 0.05);">
+        <i class="fa-solid fa-circle-exclamation" style="font-size: 1.25rem; margin-bottom: 0.25rem;"></i>
+        <div>ล้มเหลวในการสร้าง QR Code: ${err.message}</div>
+      </div>
+    `;
+  }
+}
+
+// Upload slip logic for customer
+window.uploadPaymentSlip = async function(event, orderId) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const container = event.target.closest('.slip-upload-wrapper');
+  const label = container.querySelector('.slip-label') || container;
+  const originalHtml = label.innerHTML;
+  
+  label.innerHTML = `
+    <i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem; color: var(--primary);"></i>
+    <div style="font-weight: 600; font-size: 0.9rem; margin-top: 0.5rem;">กำลังอัปโหลดสลิป...</div>
+  `;
+
+  const reader = new FileReader();
+  reader.readAsDataURL(file);
+  
+  reader.onload = async () => {
+    const base64Data = reader.result;
+    
+    try {
+      // 1. Upload base64 image
+      const uploadResponse = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64Data })
+      });
+      
+      const uploadResult = await uploadResponse.json();
+      if (!uploadResponse.ok || !uploadResult.imageUrl) {
+        throw new Error(uploadResult.error || 'Failed to upload image');
+      }
+      
+      const imageUrl = uploadResult.imageUrl;
+      
+      // 2. Put order status update with slipImage URL
+      const orderResponse = await fetch(`/api/orders/${orderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slipImage: imageUrl })
+      });
+      
+      const orderResult = await orderResponse.json();
+      if (!orderResponse.ok) {
+        throw new Error(orderResult.error || 'Failed to update order with slip');
+      }
+      
+      // Reload order details popup
+      showOrderStatus(); 
+      
+    } catch (err) {
+      alert(`เกิดข้อผิดพลาด: ${err.message}`);
+      label.innerHTML = originalHtml;
+    }
+  };
+};
 
 // Clear order cache in client to allow ordering again
 window.clearSavedOrder = function() {
