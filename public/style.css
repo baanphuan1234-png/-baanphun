@@ -474,6 +474,47 @@ header {
 @media (max-width: 768px) {
   .admin-grid {
     grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+  .admin-sidebar {
+    flex-direction: row !important;
+    overflow-x: auto;
+    padding-bottom: 0.5rem;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .sidebar-nav-btn {
+    width: auto !important;
+    flex: 0 0 auto;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+  }
+  .admin-sidebar .card {
+    display: none !important;
+  }
+  header {
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: stretch;
+    padding: 1rem;
+  }
+  .logo-container {
+    justify-content: center;
+  }
+  header > div:last-child {
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  header > div:last-child .btn, header > div:last-child span {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.8rem;
+    flex: 1 1 auto;
+    text-align: center;
+    justify-content: center;
+    display: inline-flex;
+    align-items: center;
   }
 }
 
