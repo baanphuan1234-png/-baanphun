@@ -17,11 +17,15 @@ app.use(express.static(path.join(__dirname, 'public')));
 const DATA_DIR = path.join(__dirname, 'data');
 const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
 
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR);
-}
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR);
+  }
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  }
+} catch (err) {
+  console.warn("Unable to create directories on startup (likely read-only Vercel environment):", err.message);
 }
 
 // Database paths
@@ -29,26 +33,74 @@ const MENU_PATH = path.join(DATA_DIR, 'menu.json');
 const ORDERS_PATH = path.join(DATA_DIR, 'orders.json');
 const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
 
-// Initialize files if they don't exist
-if (!fs.existsSync(MENU_PATH)) fs.writeFileSync(MENU_PATH, JSON.stringify([]));
-if (!fs.existsSync(ORDERS_PATH)) fs.writeFileSync(ORDERS_PATH, JSON.stringify([]));
-if (!fs.existsSync(SETTINGS_PATH)) fs.writeFileSync(SETTINGS_PATH, JSON.stringify({ promptPayId: '', googleSheetsUrl: '' }));
+// In-memory fallbacks (essential for Vercel Serverless read-only filesystem)
+let inMemoryMenu = [];
+let inMemoryOrders = [];
+let inMemorySettings = { promptPayId: '', googleSheetsUrl: '' };
+let inMemoryUploads = {}; // filename -> { buffer, mimeType }
 
-// Helper functions for reading/writing local files
+// Try to initialize files locally if writeable
+try {
+  if (!fs.existsSync(MENU_PATH)) fs.writeFileSync(MENU_PATH, JSON.stringify([]));
+  if (!fs.existsSync(ORDERS_PATH)) fs.writeFileSync(ORDERS_PATH, JSON.stringify([]));
+  if (!fs.existsSync(SETTINGS_PATH)) fs.writeFileSync(SETTINGS_PATH, JSON.stringify({ promptPayId: '', googleSheetsUrl: '' }));
+} catch (err) {
+  console.warn("Unable to initialize local JSON files (likely read-only Vercel environment):", err.message);
+}
+
+// Helper functions for reading/writing local files with Vercel in-memory fallback
 const readLocal = (filePath) => {
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (filePath === MENU_PATH && inMemoryMenu.length > 0) return inMemoryMenu;
+    if (filePath === ORDERS_PATH && inMemoryOrders.length > 0) return inMemoryOrders;
+    if (filePath === SETTINGS_PATH && inMemorySettings.promptPayId) {
+      return {
+        promptPayId: process.env.PROMPTPAY_ID || inMemorySettings.promptPayId || '',
+        googleSheetsUrl: process.env.GOOGLE_SHEETS_URL || inMemorySettings.googleSheetsUrl || ''
+      };
+    }
+
+    if (!fs.existsSync(filePath)) {
+      if (filePath === SETTINGS_PATH) {
+        return {
+          promptPayId: process.env.PROMPTPAY_ID || '',
+          googleSheetsUrl: process.env.GOOGLE_SHEETS_URL || ''
+        };
+      }
+      return [];
+    }
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (filePath === SETTINGS_PATH) {
+      return {
+        promptPayId: process.env.PROMPTPAY_ID || data.promptPayId || '',
+        googleSheetsUrl: process.env.GOOGLE_SHEETS_URL || data.googleSheetsUrl || ''
+      };
+    }
+    return data;
   } catch (err) {
     console.error(`Error reading ${filePath}:`, err);
+    if (filePath === MENU_PATH) return inMemoryMenu;
+    if (filePath === ORDERS_PATH) return inMemoryOrders;
+    if (filePath === SETTINGS_PATH) {
+      return {
+        promptPayId: process.env.PROMPTPAY_ID || inMemorySettings.promptPayId || '',
+        googleSheetsUrl: process.env.GOOGLE_SHEETS_URL || inMemorySettings.googleSheetsUrl || ''
+      };
+    }
     return [];
   }
 };
 
 const writeLocal = (filePath, data) => {
+  // Always update the in-memory cache
+  if (filePath === MENU_PATH) inMemoryMenu = data;
+  if (filePath === ORDERS_PATH) inMemoryOrders = data;
+  if (filePath === SETTINGS_PATH) inMemorySettings = data;
+
   try {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
   } catch (err) {
-    console.error(`Error writing to ${filePath}:`, err);
+    console.warn(`Disk write failed for ${filePath} (falling back to memory):`, err.message);
   }
 };
 
@@ -88,7 +140,10 @@ app.get('/api/settings', (req, res) => {
 
 app.post('/api/settings', (req, res) => {
   const { promptPayId, googleSheetsUrl } = req.body;
-  const settings = { promptPayId: promptPayId || '', googleSheetsUrl: googleSheetsUrl || '' };
+  const settings = {
+    promptPayId: promptPayId || process.env.PROMPTPAY_ID || '',
+    googleSheetsUrl: googleSheetsUrl || process.env.GOOGLE_SHEETS_URL || ''
+  };
   writeLocal(SETTINGS_PATH, settings);
   res.json({ success: true, settings });
 });
@@ -343,6 +398,24 @@ app.get('/api/qr', async (req, res) => {
   }
 });
 
+// Route to serve uploaded images (supports both disk and in-memory Vercel fallback)
+app.get('/uploads/:filename', (req, res) => {
+  const { filename } = req.params;
+  const filepath = path.join(UPLOADS_DIR, filename);
+  
+  if (fs.existsSync(filepath)) {
+    return res.sendFile(filepath);
+  }
+  
+  const cached = inMemoryUploads[filename];
+  if (cached) {
+    res.setHeader('Content-Type', cached.mimeType);
+    return res.send(cached.buffer);
+  }
+  
+  res.status(404).send('ไม่พบรูปภาพ');
+});
+
 // Image Upload (Base64)
 app.post('/api/upload', (req, res) => {
   const { image } = req.body;
@@ -357,18 +430,25 @@ app.post('/api/upload', (req, res) => {
   }
 
   const imageBuffer = Buffer.from(matches[2], 'base64');
+  const mimeType = `image/${matches[1] === 'jpeg' ? 'jpeg' : matches[1]}`;
   const extension = matches[1] === 'jpeg' ? 'jpg' : matches[1];
   const filename = `img_${Date.now()}.${extension}`;
   const filepath = path.join(UPLOADS_DIR, filename);
 
+  // Store in memory cache
+  inMemoryUploads[filename] = {
+    buffer: imageBuffer,
+    mimeType: mimeType
+  };
+
   try {
     fs.writeFileSync(filepath, imageBuffer);
-    const fileUrl = `/uploads/${filename}`;
-    res.json({ imageUrl: fileUrl });
   } catch (err) {
-    console.error('File saving error:', err);
-    res.status(500).json({ error: 'Failed to save uploaded image' });
+    console.warn('Disk write failed for upload (falling back to memory):', err.message);
   }
+  
+  const fileUrl = `/uploads/${filename}`;
+  res.json({ imageUrl: fileUrl });
 });
 
 // Daily Sales Statistics Summary
@@ -424,7 +504,12 @@ app.get('/api/stats', async (req, res) => {
   res.json(stats);
 });
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`Server is running at http://localhost:${PORT}`);
-});
+// Export app for Vercel Serverless Functions
+module.exports = app;
+
+// Start Server locally if not running on Vercel
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`Server is running at http://localhost:${PORT}`);
+  });
+}
