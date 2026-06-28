@@ -1,30 +1,30 @@
 [
   {
     "id": "item_1719600000001",
-    "name": "ผัดไทยกุ้งสด หอมกระทะ",
-    "price": 85,
-    "stock": 20,
-    "image": "https://images.unsplash.com/photo-1626804475315-9644b37a2ed4?auto=format&fit=crop&q=80&w=600"
+    "name": "เสื้อยืด Oversize สีมินิมอล (Beige)",
+    "price": 290,
+    "stock": 25,
+    "image": "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&q=80&w=600"
   },
   {
     "id": "item_1719600000002",
-    "name": "ข้าวกระเพราหมูกรอบ + ไข่ดาว",
-    "price": 79,
+    "name": "หมวกแก๊ปผ้ายีนส์สตรีทฟิต",
+    "price": 190,
     "stock": 15,
-    "image": "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&q=80&w=600"
+    "image": "https://images.unsplash.com/photo-1534215754734-18e55d13ce35?auto=format&fit=crop&q=80&w=600"
   },
   {
     "id": "item_1719600000003",
-    "name": "ต้มยำกุ้งแม่น้ำน้ำข้น",
-    "price": 180,
-    "stock": 10,
-    "image": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600"
+    "name": "กระเป๋าผ้า Canvas รักษ์โลกใบใหญ่",
+    "price": 120,
+    "stock": 30,
+    "image": "https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&q=80&w=600"
   },
   {
     "id": "item_1719600000004",
-    "name": "ชาไทยเย็น สูตรโบราณเข้มข้น",
-    "price": 45,
-    "stock": 30,
-    "image": "https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&q=80&w=600"
+    "name": "แก้วเซรามิกแฮนด์เมด สีครีมพาสเทล",
+    "price": 250,
+    "stock": 10,
+    "image": "https://images.unsplash.com/photo-1614850523011-8f49fc946657?auto=format&fit=crop&q=80&w=600"
   }
 ]

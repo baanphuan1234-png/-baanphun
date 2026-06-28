@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QR Code เมนูสั่งอาหาร - สั่งง่าย ได้ไว</title>
+  <title>ระบบสั่งซื้อสินค้า - ร้าน banmai</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -13,11 +13,11 @@
   <header>
     <div class="logo-container">
       <div class="logo-icon">
-        <i class="fa-solid fa-utensils"></i>
+        <i class="fa-solid fa-shop"></i>
       </div>
       <div class="logo-text">
-        <h1 id="restaurant-name">เมนูดิจิทัล</h1>
-        <p id="table-number-display">สแกนสั่งอาหารจากโต๊ะ</p>
+        <h1 id="restaurant-name">ร้าน banmai</h1>
+        <p id="table-number-display">สแกนสั่งซื้อสินค้า</p>
       </div>
     </div>
     <div class="btn btn-outline btn-sm" id="view-order-status-btn" style="display: none;">
@@ -32,7 +32,7 @@
       <div style="display: flex; gap: 0.5rem; width: 100%;">
         <div style="position: relative; flex: 1;">
           <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--text-muted);"></i>
-          <input type="text" id="search-input" class="form-control" placeholder="ค้นหาเมนูอาหาร..." style="padding-left: 2.5rem;">
+          <input type="text" id="search-input" class="form-control" placeholder="ค้นหาสินค้า..." style="padding-left: 2.5rem;">
         </div>
       </div>
     </div>
@@ -47,12 +47,12 @@
     <div class="customer-layout">
       <!-- Menu Area -->
       <div>
-        <h2 class="mb-4" style="font-weight: 700; font-size: 1.5rem;">รายการเมนูอาหารทั้งหมด</h2>
+        <h2 class="mb-4" style="font-weight: 700; font-size: 1.5rem;">รายการสินค้าทั้งหมด</h2>
         <div id="loading-spinner" class="loading-spinner"></div>
         <div id="menu-grid" class="menu-grid"></div>
         <div id="empty-menu-message" style="display: none; text-align: center; padding: 3rem; color: var(--text-muted);">
           <i class="fa-solid fa-circle-exclamation" style="font-size: 3rem; margin-bottom: 1rem;"></i>
-          <p>ไม่มีเมนูอาหารในขณะนี้</p>
+          <p>ไม่มีสินค้าในขณะนี้</p>
         </div>
       </div>
 
@@ -80,7 +80,7 @@
             <span>฿<span id="cart-total-val">0</span></span>
           </div>
           <button class="btn btn-primary btn-lg" id="submit-order-btn" style="width: 100%;" disabled>
-            <i class="fa-solid fa-paper-plane"></i> ยืนยันและสั่งอาหาร
+            <i class="fa-solid fa-paper-plane"></i> ยืนยันการสั่งซื้อ
           </button>
         </div>
       </div>

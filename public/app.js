@@ -33,7 +33,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const table = urlParams.get('table');
   if (table) {
     tableNumber = table;
-    tableNumberDisplay.textContent = `โต๊ะที่ ${tableNumber}`;
+    tableNumberDisplay.textContent = `จุดบริการที่ ${tableNumber}`;
   }
 
   fetchMenu();
@@ -292,7 +292,7 @@ async function submitOrder() {
     await fetchMenu();
 
     // Show banner
-    showNotification('ส่งออเดอร์โต๊ะของคุณเสร็จสิ้น! สามารถติดตามความคืบหน้าได้ที่ปุ่ม "ติดตามออเดอร์"');
+    showNotification('ส่งรายการสั่งซื้อของคุณเสร็จสิ้น! สามารถติดตามความคืบหน้าได้ที่ปุ่ม "ติดตามออเดอร์"');
 
     // Close mobile cart panel if open
     cartPanel.classList.remove('expanded');
@@ -300,9 +300,9 @@ async function submitOrder() {
 
   } catch (error) {
     console.error('Submit order error:', error);
-    alert(`เกิดข้อผิดพลาดในการสั่งอาหาร: ${error.message}`);
+    alert(`เกิดข้อผิดพลาดในการสั่งซื้อ: ${error.message}`);
     submitOrderBtn.disabled = false;
-    submitOrderBtn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> ยืนยันและสั่งอาหาร`;
+    submitOrderBtn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> ยืนยันการสั่งซื้อ`;
   }
 }
 
@@ -401,7 +401,7 @@ function renderOrderStatusDetails(order) {
     statusColor = 'var(--warning)';
     stepIndex = 1;
   } else if (order.status === 'completed') {
-    statusText = 'เสิร์ฟอาหารเรียบร้อยแล้ว';
+    statusText = 'ส่งมอบสินค้าเรียบร้อยแล้ว';
     statusColor = 'var(--success)';
     stepIndex = 3;
   } else if (order.status === 'cancelled') {
@@ -449,7 +449,7 @@ function renderOrderStatusDetails(order) {
 
       <div style="text-align: center; z-index: 2;">
         <div style="width: 32px; height: 32px; border-radius: 50%; background-color: ${stepIndex >= 3 ? 'var(--success)' : 'var(--bg-input)'}; color: ${stepIndex >= 3 ? 'white' : 'var(--text-muted)'}; display: flex; align-items: center; justify-content: center; font-weight: bold; margin: 0 auto 0.5rem auto;">3</div>
-        <div style="font-size: 0.75rem; font-weight: 500;">ทานอาหาร/เสร็จสิ้น</div>
+        <div style="font-size: 0.75rem; font-weight: 500;">รับสินค้า/เสร็จสิ้น</div>
       </div>
     </div>
 

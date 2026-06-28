@@ -637,10 +637,10 @@ function renderOrdersBoard(ordersList) {
     }
 
     if (!isCompleted) {
-      actionButtons += `<button class="btn btn-primary btn-sm" onclick="updateOrderStatus('${order.id}', 'completed')"><i class="fa-solid fa-utensils"></i> เสิร์ฟแล้ว</button>`;
+      actionButtons += `<button class="btn btn-primary btn-sm" onclick="updateOrderStatus('${order.id}', 'completed')"><i class="fa-solid fa-box"></i> ส่งมอบแล้ว</button>`;
       actionButtons += `<button class="btn btn-outline btn-sm btn-danger" style="margin-left:auto; border-color:var(--danger); color:var(--danger);" onclick="updateOrderStatus('${order.id}', 'cancelled')"><i class="fa-solid fa-ban"></i></button>`;
     } else {
-      actionButtons += `<span class="text-success" style="font-size:0.85rem; font-weight:600; margin-left:1rem;"><i class="fa-solid fa-circle-check"></i> เสิร์ฟเสร็จสิ้น</span>`;
+      actionButtons += `<span class="text-success" style="font-size:0.85rem; font-weight:600; margin-left:1rem;"><i class="fa-solid fa-circle-check"></i> ส่งมอบสำเร็จ</span>`;
     }
 
     // Determine card styling based on payment
@@ -651,9 +651,9 @@ function renderOrdersBoard(ordersList) {
         <div class="order-card-header">
           <div>
             <div class="order-id">รหัส: ${order.id.slice(-6)}</div>
-            <div class="order-time">${formattedTime} น. | โต๊ะ: <strong>${order.table || 'ทั่วไป'}</strong></div>
+            <div class="order-time">${formattedTime} น. | จุดบริการ: <strong>${order.table || 'ทั่วไป'}</strong></div>
           </div>
-          <span class="order-status-badge status-${order.status}">${order.status === 'pending' ? 'รอดำเนินการ' : 'เสิร์ฟเสร็จสิ้น'}</span>
+          <span class="order-status-badge status-${order.status}">${order.status === 'pending' ? 'รอดำเนินการ' : 'ส่งมอบสำเร็จ'}</span>
         </div>
         <div class="order-items-list">
           ${itemsHtml}
@@ -829,7 +829,7 @@ function renderStats(stats) {
 async function generateTableQrCode() {
   const tableNum = qrTableNumber.value.trim();
   if (!tableNum) {
-    alert('กรุณากรอกเลขโต๊ะอาหาร');
+    alert('กรุณากรอกรหัสจุดบริการ/เลขโต๊ะ');
     return;
   }
 
@@ -845,7 +845,7 @@ async function generateTableQrCode() {
     if (!response.ok) throw new Error(result.error);
 
     tableQrImageContainer.innerHTML = `<img src="${result.qrImage}" style="width:200px;height:200px;" alt="Table QR Code">`;
-    tableQrLinkText.textContent = `ลิงก์ของโต๊ะ ${tableNum}: ${tableUrl}`;
+    tableQrLinkText.textContent = `ลิงก์ของจุดบริการ ${tableNum}: ${tableUrl}`;
     
     // Set download button
     downloadTableQrBtn.onclick = () => {
