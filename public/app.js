@@ -479,8 +479,11 @@ async function submitOrder() {
     // Refresh Menu to update stocks
     await fetchMenu();
 
-    // Show banner
-    showNotification('ส่งรายการสั่งซื้อของคุณเสร็จสิ้น! สามารถติดตามความคืบหน้าได้ที่ปุ่ม "ติดตามออเดอร์"');
+    // Show banner and automatically pop up tracking modal with QR code
+    showNotification('ส่งรายการสั่งซื้อของคุณเสร็จสิ้น! กำลังแสดงหน้าจอชำระเงิน...');
+    setTimeout(() => {
+      showOrderStatus();
+    }, 800);
 
     // Close mobile cart panel if open
     cartPanel.classList.remove('expanded');
