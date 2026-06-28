@@ -188,21 +188,83 @@ function jsonResponse(data) {
 
 // Page initialization
 window.addEventListener('DOMContentLoaded', () => {
-  fetchSettings();
-  fetchMenu();
-  fetchOrders();
-  fetchStats();
+  const token = localStorage.getItem('adminToken');
+  const loginWrapper = document.getElementById('login-wrapper');
+  const dashboardLayout = document.getElementById('admin-dashboard-layout');
+
+  if (token) {
+    showDashboard(loginWrapper, dashboardLayout);
+  } else {
+    loginWrapper.style.display = 'flex';
+    dashboardLayout.style.display = 'none';
+  }
+
+  setupLoginEventListeners(loginWrapper, dashboardLayout);
   setupEventListeners();
 
   // Set Apps Script code template text
   appsScriptTextarea.value = APPS_SCRIPT_CODE;
+});
+
+function showDashboard(loginWrapper, dashboardLayout) {
+  loginWrapper.style.display = 'none';
+  dashboardLayout.style.display = 'block';
+  
+  // Fetch initial data only after successful login
+  fetchSettings();
+  fetchMenu();
+  fetchOrders();
+  fetchStats();
 
   // Poll orders & stats every 5 seconds to keep admin updated
   setInterval(() => {
-    fetchOrders(true); // silent fetch
-    fetchStats(true);  // silent fetch
+    if (localStorage.getItem('adminToken')) {
+      fetchOrders(true); // silent fetch
+      fetchStats(true);  // silent fetch
+    }
   }, 5000);
-});
+}
+
+function setupLoginEventListeners(loginWrapper, dashboardLayout) {
+  const loginForm = document.getElementById('login-form');
+  const loginError = document.getElementById('login-error');
+  const logoutBtn = document.getElementById('logout-btn');
+
+  if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('login-username').value;
+      const password = document.getElementById('login-password').value;
+      loginError.style.display = 'none';
+
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const result = await response.json();
+        if (response.ok && result.success) {
+          localStorage.setItem('adminToken', result.token);
+          showDashboard(loginWrapper, dashboardLayout);
+        } else {
+          loginError.textContent = result.error || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
+          loginError.style.display = 'block';
+        }
+      } catch (err) {
+        loginError.textContent = 'เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์';
+        loginError.style.display = 'block';
+      }
+    });
+  }
+
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+      localStorage.removeItem('adminToken');
+      window.location.reload();
+    });
+  }
+}
 
 // Setup Event Listeners
 function setupEventListeners() {

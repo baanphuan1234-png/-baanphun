@@ -880,3 +880,26 @@ header {
 
 .alert-success { background-color: var(--success-light); color: var(--success-hover); border: 1px solid var(--success); }
 .alert-danger { background-color: var(--danger-light); color: var(--danger-hover); border: 1px solid var(--danger); }
+
+/* Login Panel Styles */
+.login-wrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: var(--bg-main);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 2.5rem;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+}

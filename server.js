@@ -132,6 +132,19 @@ async function syncWithGoogleSheets(action, payload = null) {
 
 // --- API ENDPOINTS ---
 
+// Admin Authentication (Login)
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body;
+  const correctUser = process.env.ADMIN_USERNAME || 'admin';
+  const correctPass = process.env.ADMIN_PASSWORD || 'admin1234';
+
+  if (username === correctUser && password === correctPass) {
+    res.json({ success: true, token: 'admin_session_token_' + Date.now() });
+  } else {
+    res.status(401).json({ error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
+  }
+});
+
 // Settings
 app.get('/api/settings', (req, res) => {
   const settings = readLocal(SETTINGS_PATH);

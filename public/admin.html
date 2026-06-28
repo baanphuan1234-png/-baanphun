@@ -9,6 +9,33 @@
 </head>
 <body class="dark-theme"> <!-- Dark Theme by default for Admin Dashboard -->
 
+  <!-- LOGIN CONTAINER -->
+  <div class="login-wrapper" id="login-wrapper" style="display: none;">
+    <div class="card login-card">
+      <div style="text-align: center; margin-bottom: 2rem;">
+        <div class="logo-icon" style="display: inline-flex; width: 60px; height: 60px; font-size: 1.75rem; margin-bottom: 1rem; background-color: var(--primary); color: white; border-radius: var(--radius-md); justify-content: center; align-items: center;">
+          <i class="fa-solid fa-user-tie"></i>
+        </div>
+        <h2 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem;">เข้าสู่ระบบแอดมิน</h2>
+        <p style="color: var(--text-muted); font-size: 0.875rem;">กรุณากรอกรหัสผ่านเพื่อเข้าใช้งานแดชบอร์ด</p>
+      </div>
+      <form id="login-form">
+        <div class="form-group" style="margin-bottom: 1.25rem;">
+          <label for="login-username" style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 500;">ชื่อผู้ใช้งาน</label>
+          <input type="text" id="login-username" class="form-control" placeholder="admin" required style="width: 100%; padding: 0.75rem; background-color: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-main); border-radius: var(--radius-md);">
+        </div>
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+          <label for="login-password" style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 500;">รหัสผ่าน</label>
+          <input type="password" id="login-password" class="form-control" placeholder="••••••••" required style="width: 100%; padding: 0.75rem; background-color: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-main); border-radius: var(--radius-md);">
+        </div>
+        <div id="login-error" style="color: var(--danger); font-size: 0.85rem; margin-bottom: 1rem; display: none;"></div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem; border-radius: var(--radius-md); font-weight: 600;">เข้าสู่ระบบ</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="admin-dashboard-layout" style="display: none;">
+
   <!-- Header -->
   <header>
     <div class="logo-container">
@@ -26,6 +53,9 @@
       </span>
       <button class="btn btn-outline btn-sm" id="theme-toggle">
         <i class="fa-solid fa-sun"></i> สลับโหมดสี
+      </button>
+      <button class="btn btn-outline btn-sm" id="logout-btn" style="border-color: var(--danger); color: var(--danger);">
+        <i class="fa-solid fa-right-from-bracket"></i> ออกจากระบบ
       </button>
     </div>
   </header>
@@ -286,6 +316,8 @@
         <i class="fa-solid fa-copy"></i> คัดลอกโค้ดไปยังคลิปบอร์ด
       </button>
     </div>
+  </div>
+
   </div>
 
   <script src="admin.js"></script>
