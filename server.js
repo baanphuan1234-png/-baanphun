@@ -40,6 +40,14 @@ let inMemoryOrders = [];
 let inMemorySettings = { promptPayId: '', googleSheetsUrl: '' };
 let inMemoryUploads = {}; // filename -> { buffer, mimeType }
 
+// Memory cache for Google Sheets responses to boost speed
+const cache = {
+  menu: { data: null, timestamp: 0 },
+  orders: { data: null, timestamp: 0 }
+};
+const CACHE_DURATION_MENU = 15000; // 15 seconds cache
+const CACHE_DURATION_ORDERS = 5000; // 5 seconds cache
+
 // Try to initialize files locally if writeable
 try {
   if (!fs.existsSync(MENU_PATH)) fs.writeFileSync(MENU_PATH, JSON.stringify([]));
@@ -164,6 +172,11 @@ app.post('/api/settings', (req, res) => {
 
 // Menu Items (Read, Create, Update, Delete)
 app.get('/api/menu', async (req, res) => {
+  const now = Date.now();
+  if (cache.menu.data && (now - cache.menu.timestamp < CACHE_DURATION_MENU)) {
+    return res.json(cache.menu.data);
+  }
+
   // Try to sync with Google Sheet first
   const sheetMenu = await syncWithGoogleSheets('getMenu');
   if (sheetMenu && Array.isArray(sheetMenu)) {
@@ -178,11 +191,14 @@ app.get('/api/menu', async (req, res) => {
       variants: item.variants ? (typeof item.variants === 'string' ? JSON.parse(item.variants) : item.variants) : []
     }));
     writeLocal(MENU_PATH, formattedMenu); // Keep local in sync
+    cache.menu = { data: formattedMenu, timestamp: Date.now() };
     return res.json(formattedMenu);
   }
 
   // Fallback to local
-  res.json(readLocal(MENU_PATH));
+  const localMenu = readLocal(MENU_PATH);
+  cache.menu = { data: localMenu, timestamp: Date.now() };
+  res.json(localMenu);
 });
 
 app.post('/api/menu', async (req, res) => {
@@ -201,6 +217,9 @@ app.post('/api/menu', async (req, res) => {
   
   menu.push(newItem);
   writeLocal(MENU_PATH, menu);
+  
+  // Invalidate cache
+  cache.menu.timestamp = 0;
   
   // Sync to Google Sheets
   await syncWithGoogleSheets('saveMenu', { data: menu });
@@ -230,6 +249,9 @@ app.put('/api/menu/:id', async (req, res) => {
   
   writeLocal(MENU_PATH, menu);
   
+  // Invalidate cache
+  cache.menu.timestamp = 0;
+  
   // Sync to Google Sheets
   await syncWithGoogleSheets('saveMenu', { data: menu });
   
@@ -243,6 +265,9 @@ app.delete('/api/menu/:id', async (req, res) => {
   menu = menu.filter(item => item.id !== id);
   writeLocal(MENU_PATH, menu);
   
+  // Invalidate cache
+  cache.menu.timestamp = 0;
+  
   // Sync to Google Sheets
   await syncWithGoogleSheets('saveMenu', { data: menu });
   
@@ -251,12 +276,21 @@ app.delete('/api/menu/:id', async (req, res) => {
 
 // Orders
 app.get('/api/orders', async (req, res) => {
+  const now = Date.now();
+  if (cache.orders.data && (now - cache.orders.timestamp < CACHE_DURATION_ORDERS)) {
+    return res.json(cache.orders.data);
+  }
+
   const sheetOrders = await syncWithGoogleSheets('getOrders');
   if (sheetOrders && Array.isArray(sheetOrders)) {
     writeLocal(ORDERS_PATH, sheetOrders); // Keep local in sync
+    cache.orders = { data: sheetOrders, timestamp: Date.now() };
     return res.json(sheetOrders);
   }
-  res.json(readLocal(ORDERS_PATH));
+  
+  const localOrders = readLocal(ORDERS_PATH);
+  cache.orders = { data: localOrders, timestamp: Date.now() };
+  res.json(localOrders);
 });
 
 // Create Order (customer adds order)
@@ -354,6 +388,10 @@ app.post('/api/orders', async (req, res) => {
   orders.push(newOrder);
   writeLocal(ORDERS_PATH, orders);
 
+  // Invalidate caches
+  cache.orders.timestamp = 0;
+  cache.menu.timestamp = 0;
+
   // Sync to Google Sheets
   await syncWithGoogleSheets('saveOrder', { data: newOrder });
 
@@ -428,6 +466,10 @@ app.put('/api/orders/:id', async (req, res) => {
 
   writeLocal(ORDERS_PATH, orders);
 
+  // Invalidate caches
+  cache.orders.timestamp = 0;
+  cache.menu.timestamp = 0; // stock could return if cancelled
+
   // Sync to Google Sheets
   await syncWithGoogleSheets('saveOrder', { data: orders[orderIndex] });
 
@@ -441,6 +483,9 @@ app.delete('/api/orders/:id', async (req, res) => {
 
   orders = orders.filter(o => o.id !== id);
   writeLocal(ORDERS_PATH, orders);
+
+  // Invalidate cache
+  cache.orders.timestamp = 0;
 
   // Sync to Google Sheets by overwriting orders list
   await syncWithGoogleSheets('saveOrdersList', { data: orders });
@@ -553,6 +598,10 @@ app.put('/api/orders/:id/items', async (req, res) => {
   // Write changes locally
   writeLocal(MENU_PATH, updatedMenu);
   writeLocal(ORDERS_PATH, orders);
+
+  // Invalidate caches
+  cache.orders.timestamp = 0;
+  cache.menu.timestamp = 0;
 
   // Sync to Google Sheets
   await syncWithGoogleSheets('saveMenu', { data: updatedMenu });
