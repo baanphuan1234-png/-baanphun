@@ -335,11 +335,19 @@ function setupEventListeners() {
   closeEditOrderModalBtn.addEventListener('click', () => editOrderModal.classList.remove('active'));
   closePaymentModalBtn.addEventListener('click', () => paymentModal.classList.remove('active'));
   
+  // Slip Modal close
+  const slipModal = document.getElementById('slip-modal');
+  const closeSlipModalBtn = document.getElementById('close-slip-modal-btn');
+  const closeSlipModalBtn2 = document.getElementById('close-slip-modal-btn2');
+  if (closeSlipModalBtn) closeSlipModalBtn.addEventListener('click', () => slipModal.classList.remove('active'));
+  if (closeSlipModalBtn2) closeSlipModalBtn2.addEventListener('click', () => slipModal.classList.remove('active'));
+
   window.addEventListener('click', (e) => {
     if (e.target === productModal) productModal.classList.remove('active');
     if (e.target === paymentModal) paymentModal.classList.remove('active');
     if (e.target === scriptModal) scriptModal.classList.remove('active');
     if (e.target === editOrderModal) editOrderModal.classList.remove('active');
+    if (e.target === slipModal) slipModal.classList.remove('active');
   });
 
   // Stock CRUD actions
@@ -784,7 +792,10 @@ function renderOrdersBoard(ordersList) {
     let actionButtons = '';
     
     if (!isPaid) {
-      actionButtons += `<button class="btn btn-success btn-sm" onclick="openPromptPayPayment('${order.id}', ${order.total})"><i class="fa-solid fa-qrcode"></i> ชำระเงิน (พร้อมเพย์)</button>`;
+      actionButtons += `<button class="btn btn-success btn-sm" onclick="confirmPaymentSuccess('${order.id}')"><i class="fa-solid fa-circle-check"></i> ยืนยันชำระเงิน</button>`;
+      if (order.paymentMethod !== 'เงินสด') {
+        actionButtons += `<button class="btn btn-outline btn-sm" style="margin-left: 0.25rem; border-color: var(--primary); color: var(--primary);" onclick="openPromptPayPayment('${order.id}', ${order.total})"><i class="fa-solid fa-qrcode"></i> ดู QR Code</button>`;
+      }
     } else {
       actionButtons += `<span class="text-success" style="font-size:0.85rem; font-weight:600;"><i class="fa-solid fa-circle-check"></i> จ่ายเงินแล้ว</span>`;
     }
@@ -805,9 +816,10 @@ function renderOrdersBoard(ordersList) {
       slipHtml = `
         <div class="order-slip-preview mt-2" style="margin-top: 0.75rem; border-top: 1px dashed var(--border-color); padding-top: 0.75rem; text-align: center;">
           <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; text-align: left; color: var(--text-muted);">สลิปโอนเงินของลูกค้า:</div>
-          <a href="${order.slipImage}" target="_blank" title="คลิกเพื่อดูรูปภาพสลิปเต็ม">
-            <img src="${order.slipImage}" style="max-width: 100%; max-height: 180px; object-fit: contain; border-radius: var(--radius-md); border: 1px solid var(--border-color); cursor: pointer;" onerror="this.onerror=null; this.src='https://placehold.co/120x160/f1f5f9/94a3b8?text=SlipNotFound';">
-          </a>
+          <div style="cursor: pointer;" onclick="viewOrderSlip('${order.slipImage}')" title="คลิกเพื่อดูรูปภาพสลิปเต็ม">
+            <img src="${order.slipImage}" style="max-width: 100%; max-height: 180px; object-fit: contain; border-radius: var(--radius-md); border: 1px solid var(--border-color);" onerror="this.onerror=null; this.src='https://placehold.co/120x160/f1f5f9/94a3b8?text=SlipNotFound';">
+            <div style="font-size: 0.75rem; color: var(--primary); text-decoration: underline; margin-top: 0.25rem;"><i class="fa-solid fa-magnifying-glass-plus"></i> คลิกเพื่อดูรูปสลิปเต็ม</div>
+          </div>
         </div>
       `;
     }
@@ -913,6 +925,15 @@ window.confirmPaymentSuccess = function(orderId) {
 
 window.closePaymentModal = function() {
   paymentModal.classList.remove('active');
+};
+
+window.viewOrderSlip = function(imageUrl) {
+  const slipModal = document.getElementById('slip-modal');
+  const slipModalImg = document.getElementById('slip-modal-img');
+  if (slipModal && slipModalImg) {
+    slipModalImg.src = imageUrl;
+    slipModal.classList.add('active');
+  }
 };
 
 // Statistics tab logic
