@@ -349,6 +349,45 @@
     </div>
   </div>
 
+  <!-- MODAL: EDIT ORDER ITEMS -->
+  <div class="modal" id="edit-order-modal">
+    <div class="modal-content" style="max-width: 600px; padding: 1.5rem;">
+      <div class="modal-header">
+        <h3 class="modal-title">แก้ไขสินค้าในออเดอร์ (รหัส: <span id="edit-order-id-label" style="font-family: monospace;"></span>)</h3>
+        <button class="modal-close" id="close-edit-order-modal-btn">&times;</button>
+      </div>
+      
+      <div id="edit-order-items-list" style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1.25rem; margin-bottom: 1.5rem; max-height: 250px; overflow-y: auto; padding-right: 0.25rem;">
+        <!-- Existing items with inputs injected here -->
+      </div>
+      
+      <div style="border-top: 1px solid var(--border-color); padding-top: 1rem; margin-bottom: 1rem;">
+        <label style="font-weight: 700; display: block; margin-bottom: 0.5rem; font-size: 0.9rem;">เพิ่มสินค้าใหม่เข้าไปในออเดอร์:</label>
+        <div style="display: grid; grid-template-columns: 2fr 1.5fr 1fr auto; gap: 0.5rem; align-items: center;">
+          <select id="add-order-product-select" class="form-control" style="padding: 0.35rem 0.5rem; font-size: 0.85rem; height: 36px;"></select>
+          <select id="add-order-variant-select" class="form-control" style="padding: 0.35rem 0.5rem; font-size: 0.85rem; height: 36px; display: none;"></select>
+          <input type="number" id="add-order-qty-input" class="form-control" min="1" value="1" style="padding: 0.35rem 0.5rem; font-size: 0.85rem; height: 36px;">
+          <button type="button" class="btn btn-primary" id="add-item-to-order-btn" style="padding: 0.4rem 0.85rem; font-size: 0.85rem; height: 36px;">
+            <i class="fa-solid fa-plus"></i> เพิ่ม
+          </button>
+        </div>
+      </div>
+
+      <div style="border-top: 1px solid var(--border-color); padding-top: 1rem; display: flex; justify-content: space-between; font-weight: 700; font-size: 1.05rem; margin-bottom: 1rem;">
+        <span>ยอดรวมเดิม: ฿<span id="edit-order-old-total">0</span></span>
+        <span style="color: var(--primary);">ยอดรวมใหม่: ฿<span id="edit-order-new-total">0</span></span>
+      </div>
+      
+      <div id="edit-order-diff-box" style="padding: 0.75rem; border-radius: var(--radius-md); font-weight: 600; text-align: center; margin-bottom: 1.5rem; font-size: 0.9rem; display: none;">
+        <!-- Diff alert -->
+      </div>
+      
+      <button class="btn btn-primary" id="save-edit-order-btn" style="width: 100%; padding: 0.75rem;">
+        <i class="fa-solid fa-floppy-disk"></i> บันทึกการแก้ไขออเดอร์
+      </button>
+    </div>
+  </div>
+
   <!-- MODAL: APPS SCRIPT CODE VIEWER -->
   <div class="modal" id="script-modal">
     <div class="modal-content" style="max-width: 650px;">

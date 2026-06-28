@@ -48,6 +48,20 @@ const singleStockGroup = document.getElementById('single-stock-group');
 const variantsGroup = document.getElementById('variants-group');
 const addVariantOptionBtn = document.getElementById('add-variant-option-btn');
 const variantsList = document.getElementById('variants-list');
+
+// Edit Order Modal Elements
+const editOrderModal = document.getElementById('edit-order-modal');
+const closeEditOrderModalBtn = document.getElementById('close-edit-order-modal-btn');
+const editOrderIdLabel = document.getElementById('edit-order-id-label');
+const editOrderItemsList = document.getElementById('edit-order-items-list');
+const addOrderProductSelect = document.getElementById('add-order-product-select');
+const addOrderVariantSelect = document.getElementById('add-order-variant-select');
+const addOrderQtyInput = document.getElementById('add-order-qty-input');
+const addItemToOrderBtn = document.getElementById('add-item-to-order-btn');
+const editOrderOldTotal = document.getElementById('edit-order-old-total');
+const editOrderNewTotal = document.getElementById('edit-order-new-total');
+const editOrderDiffBox = document.getElementById('edit-order-diff-box');
+const saveEditOrderBtn = document.getElementById('save-edit-order-btn');
 const imageUploadBox = document.getElementById('image-upload-box');
 const uploadPlaceholder = document.getElementById('upload-placeholder');
 
@@ -318,12 +332,14 @@ function setupEventListeners() {
 
   // Modals close button clicks
   closeProductModalBtn.addEventListener('click', () => productModal.classList.remove('active'));
+  closeEditOrderModalBtn.addEventListener('click', () => editOrderModal.classList.remove('active'));
   closePaymentModalBtn.addEventListener('click', () => paymentModal.classList.remove('active'));
   
   window.addEventListener('click', (e) => {
     if (e.target === productModal) productModal.classList.remove('active');
     if (e.target === paymentModal) paymentModal.classList.remove('active');
     if (e.target === scriptModal) scriptModal.classList.remove('active');
+    if (e.target === editOrderModal) editOrderModal.classList.remove('active');
   });
 
   // Stock CRUD actions
@@ -354,6 +370,29 @@ function setupEventListeners() {
   // Manual refresh buttons
   refreshOrdersBtn.addEventListener('click', () => fetchOrders(false));
   refreshStatsBtn.addEventListener('click', () => fetchStats(false));
+
+  // Edit Order modal event listeners
+  if (addOrderProductSelect) {
+    addOrderProductSelect.addEventListener('change', () => {
+      const selectedProductId = addOrderProductSelect.value;
+      const item = menuItems.find(p => p.id === selectedProductId);
+      if (item && item.hasVariants && Array.isArray(item.variants)) {
+        addOrderVariantSelect.style.display = 'inline-block';
+        addOrderVariantSelect.innerHTML = item.variants.map(v => `<option value="${v.name}">${v.name} (คงเหลือ: ${v.stock})</option>`).join('');
+      } else {
+        addOrderVariantSelect.style.display = 'none';
+        addOrderVariantSelect.innerHTML = '';
+      }
+    });
+  }
+
+  if (addItemToOrderBtn) {
+    addItemToOrderBtn.addEventListener('click', addProductToEditOrder);
+  }
+
+  if (saveEditOrderBtn) {
+    saveEditOrderBtn.addEventListener('click', saveEditOrder);
+  }
 
   // Date filter for sales report
   const statsDateFilter = document.getElementById('stats-date-filter');
@@ -753,6 +792,7 @@ function renderOrdersBoard(ordersList) {
     if (!isCompleted) {
       actionButtons += `<button class="btn btn-primary btn-sm" onclick="updateOrderStatus('${order.id}', 'completed')"><i class="fa-solid fa-box"></i> ส่งมอบแล้ว</button>`;
       actionButtons += `<button class="btn btn-outline btn-sm btn-danger" style="margin-left:auto; border-color:var(--danger); color:var(--danger);" onclick="updateOrderStatus('${order.id}', 'cancelled')"><i class="fa-solid fa-ban"></i></button>`;
+      actionButtons += `<button class="btn btn-outline btn-sm" style="margin-left: 0.5rem; border-color: var(--primary); color: var(--primary);" onclick="openEditOrderModal('${order.id}')" title="แก้ไขรายการสินค้า"><i class="fa-solid fa-pen"></i> แก้ไข</button>`;
     } else {
       actionButtons += `<span class="text-success" style="font-size:0.85rem; font-weight:600; margin-left:1rem;"><i class="fa-solid fa-circle-check"></i> ส่งมอบสำเร็จ</span>`;
     }
@@ -1036,6 +1076,9 @@ function renderStats() {
           <td><strong>฿${(parseFloat(order.total) || 0).toLocaleString()}</strong></td>
           <td>${paymentStatusBadge}</td>
           <td>
+            <button class="btn btn-outline btn-sm" style="padding: 0.25rem 0.5rem; border-color:var(--primary); color:var(--primary); margin-right:0.25rem;" onclick="openEditOrderModal('${order.id}')" title="แก้ไขออเดอร์">
+              <i class="fa-solid fa-pen"></i> แก้ไข
+            </button>
             <button class="btn btn-outline btn-sm btn-danger" style="padding: 0.25rem 0.5rem; border-color:var(--danger); color:var(--danger);" onclick="deleteOrderHistory('${order.id}')" title="ลบประวัติออเดอร์">
               <i class="fa-solid fa-trash-can"></i>
             </button>
@@ -1114,4 +1157,267 @@ function copyScriptToClipboard() {
     .catch(err => {
       alert('ไม่สามารถคัดลอกได้อัตโนมัติ กรุณาลากดำคัดลอกโค้ดเองในช่องข้อความ');
     });
+}
+
+
+// --- EDIT ORDER ITEMS LOGIC ---
+let editingOrderId = null;
+let editingOrderOriginalTotal = 0;
+let editingOrderItems = []; // [{ id, name, price, quantity, variant }]
+
+window.openEditOrderModal = function(orderId) {
+  const order = orders.find(o => o.id === orderId);
+  if (!item || !order) return;
+
+  editingOrderId = orderId;
+  editingOrderOriginalTotal = parseFloat(order.total) || 0;
+  
+  // Deep clone order items
+  editingOrderItems = order.items.map(it => ({
+    id: it.id,
+    name: it.name,
+    price: parseFloat(it.price) || 0,
+    quantity: parseInt(it.quantity) || 1,
+    variant: it.variant || ''
+  }));
+
+  editOrderIdLabel.textContent = orderId.slice(-6).toUpperCase();
+  editOrderOldTotal.textContent = editingOrderOriginalTotal.toLocaleString();
+
+  // Populate product dropdown selector
+  if (addOrderProductSelect) {
+    addOrderProductSelect.innerHTML = menuItems.map(p => `<option value="${p.id}">${p.name} (฿${p.price})</option>`).join('');
+    // Trigger change event to populate variant select if needed
+    addOrderProductSelect.dispatchEvent(new Event('change'));
+  }
+  
+  if (addOrderQtyInput) {
+    addOrderQtyInput.value = 1;
+  }
+
+  renderEditOrderItems();
+  editOrderModal.classList.add('active');
+};
+
+function renderEditOrderItems() {
+  if (editingOrderItems.length === 0) {
+    editOrderItemsList.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:1rem;">ไม่มีสินค้าในออเดอร์นี้ (กรุณาเพิ่มสินค้า)</div>';
+    editOrderNewTotal.textContent = '0';
+    updateEditOrderDiff(0);
+    return;
+  }
+
+  let total = 0;
+  editOrderItemsList.innerHTML = editingOrderItems.map((item, index) => {
+    total += item.price * item.quantity;
+    
+    // Check if product has variants to show flavor selection dropdown
+    const product = menuItems.find(p => p.id === item.id);
+    let variantDropdownHtml = '';
+    
+    if (product && product.hasVariants && Array.isArray(product.variants)) {
+      variantDropdownHtml = `
+        <select class="form-control" style="padding:0.25rem; font-size:0.8rem; height:28px;" onchange="updateEditOrderVariant(${index}, this)">
+          ${product.variants.map(v => {
+            const isSelected = v.name === item.variant;
+            return `<option value="${v.name}" ${isSelected ? 'selected' : ''}>${v.name}</option>`;
+          }).join('')}
+        </select>
+      `;
+    } else {
+      variantDropdownHtml = `<span style="font-size:0.8rem; color:var(--text-muted);">ไม่มีตัวเลือกย่อย</span>`;
+    }
+
+    return `
+      <div style="display:grid; grid-template-columns: 2fr 1.5fr 1fr auto; gap:0.5rem; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:0.5rem;">
+        <div>
+          <div style="font-weight:600; font-size:0.9rem;">${item.name}</div>
+          <div style="font-size:0.75rem; color:var(--text-muted);">฿${item.price}</div>
+        </div>
+        <div>
+          ${variantDropdownHtml}
+        </div>
+        <div style="display:flex; align-items:center; border:1px solid var(--border-color); border-radius:var(--radius-sm); overflow:hidden; background-color:var(--bg-main);">
+          <button class="qty-btn" style="padding:2px 6px;" onclick="updateEditOrderQty(${index}, -1)">-</button>
+          <span style="width:25px; text-align:center; font-size:0.85rem; font-weight:600;">${item.quantity}</span>
+          <button class="qty-btn" style="padding:2px 6px;" onclick="updateEditOrderQty(${index}, 1)">+</button>
+        </div>
+        <button class="btn btn-outline btn-sm btn-danger" style="padding: 0.25rem 0.4rem;" onclick="removeProductFromEditOrder(${index})">
+          <i class="fa-solid fa-trash-can"></i>
+        </button>
+      </div>
+    `;
+  }).join('');
+
+  editOrderNewTotal.textContent = total.toLocaleString();
+  updateEditOrderDiff(total);
+}
+
+window.updateEditOrderQty = function(index, change) {
+  const item = editingOrderItems[index];
+  if (!item) return;
+
+  const newQty = item.quantity + change;
+  if (newQty <= 0) {
+    removeProductFromEditOrder(index);
+  } else {
+    // Check stock limit for that product/variant
+    const product = menuItems.find(p => p.id === item.id);
+    let maxStock = 999;
+    if (product) {
+      if (product.hasVariants) {
+        const v = product.variants.find(varObj => varObj.name === item.variant);
+        maxStock = v ? v.stock : 0;
+      } else {
+        maxStock = product.stock;
+      }
+      
+      // Since they are editing an existing order, the max limit should also include the quantity they ALREADY ordered
+      // to not block them from keeping their current quantity!
+      const originalOrder = orders.find(o => o.id === editingOrderId);
+      const originalItem = originalOrder ? originalOrder.items.find(it => it.id === item.id && it.variant === item.variant) : null;
+      const originalQty = originalItem ? originalItem.quantity : 0;
+      maxStock += originalQty;
+    }
+
+    if (newQty <= maxStock) {
+      item.quantity = newQty;
+      renderEditOrderItems();
+    } else {
+      alert(`สต็อกไม่พอ! สามารถสั่งซื้อชิ้นนี้ได้สูงสุด ${maxStock} ชิ้น`);
+    }
+  }
+};
+
+window.updateEditOrderVariant = function(index, selectElement) {
+  const item = editingOrderItems[index];
+  if (!item) return;
+  
+  const oldVariant = item.variant;
+  const newVariant = selectElement.value;
+  item.variant = newVariant;
+
+  // Validate stock of the new variant
+  const product = menuItems.find(p => p.id === item.id);
+  if (product) {
+    const v = product.variants.find(varObj => varObj.name === newVariant);
+    let maxStock = v ? v.stock : 0;
+
+    // Adjust for current order quantities if they already ordered this variant originally
+    const originalOrder = orders.find(o => o.id === editingOrderId);
+    const originalItem = originalOrder ? originalOrder.items.find(it => it.id === item.id && it.variant === newVariant) : null;
+    maxStock += originalItem ? originalItem.quantity : 0;
+
+    if (item.quantity > maxStock) {
+      alert(`สต็อกของกลิ่น ${newVariant} มีเพียง ${maxStock} ชิ้น! ทำการปรับจำนวนสั่งเป็นจำนวนสต็อกแทน`);
+      item.quantity = maxStock > 0 ? maxStock : 1;
+    }
+  }
+  
+  renderEditOrderItems();
+};
+
+window.removeProductFromEditOrder = function(index) {
+  editingOrderItems.splice(index, 1);
+  renderEditOrderItems();
+};
+
+function addProductToEditOrder() {
+  const selectedProductId = addOrderProductSelect.value;
+  const product = menuItems.find(p => p.id === selectedProductId);
+  if (!product) return;
+
+  const variantName = addOrderVariantSelect.style.display !== 'none' ? addOrderVariantSelect.value : '';
+  const qty = parseInt(addOrderQtyInput.value) || 1;
+
+  // Validate stock
+  let maxStock = product.stock;
+  if (product.hasVariants) {
+    const v = product.variants.find(varObj => varObj.name === variantName);
+    maxStock = v ? v.stock : 0;
+  }
+
+  // Adjust for original quantities in this order
+  const originalOrder = orders.find(o => o.id === editingOrderId);
+  const originalItem = originalOrder ? originalOrder.items.find(it => it.id === selectedProductId && it.variant === variantName) : null;
+  maxStock += originalItem ? originalItem.quantity : 0;
+
+  // If already exists in editing list, sum them
+  const existingIndex = editingOrderItems.findIndex(it => it.id === selectedProductId && it.variant === variantName);
+  const currentEditingQty = existingIndex !== -1 ? editingOrderItems[existingIndex].quantity : 0;
+
+  if (currentEditingQty + qty <= maxStock) {
+    if (existingIndex !== -1) {
+      editingOrderItems[existingIndex].quantity += qty;
+    } else {
+      editingOrderItems.push({
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        quantity: qty,
+        variant: variantName
+      });
+    }
+    renderEditOrderItems();
+  } else {
+    alert(`ขออภัย สต็อกไม่พอ! สามารถสั่งกลิ่น/สินค้านี้เพิ่มได้สูงสุดอีก ${maxStock - currentEditingQty} ชิ้น`);
+  }
+}
+
+function updateEditOrderDiff(newTotal) {
+  const diff = newTotal - editingOrderOriginalTotal;
+  if (diff === 0) {
+    editOrderDiffBox.style.display = 'none';
+  } else if (diff > 0) {
+    editOrderDiffBox.style.display = 'block';
+    editOrderDiffBox.style.backgroundColor = 'var(--warning-light)';
+    editOrderDiffBox.style.color = 'var(--warning-hover)';
+    editOrderDiffBox.style.border = '1px solid var(--warning)';
+    editOrderDiffBox.textContent = `ยอดใหม่เพิ่มขึ้น: ต้องเก็บเงินเพิ่ม +฿${diff.toLocaleString()}`;
+  } else {
+    editOrderDiffBox.style.display = 'block';
+    editOrderDiffBox.style.backgroundColor = 'var(--success-light)';
+    editOrderDiffBox.style.color = 'var(--success-hover)';
+    editOrderDiffBox.style.border = '1px solid var(--success)';
+    editOrderDiffBox.textContent = `ยอดใหม่ลดลง: ต้องทอนเงินคืนลูกค้า -฿${Math.abs(diff).toLocaleString()}`;
+  }
+}
+
+async function saveEditOrder() {
+  if (editingOrderItems.length === 0) {
+    alert('กรุณาเพิ่มสินค้าอย่างน้อย 1 ชิ้นในออเดอร์!');
+    return;
+  }
+
+  saveEditOrderBtn.disabled = true;
+  saveEditOrderBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึกการแก้ไข...';
+
+  try {
+    const response = await fetch(`/api/orders/${editingOrderId}/items`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: editingOrderItems.map(it => ({
+          id: it.id,
+          quantity: it.quantity,
+          variant: it.variant
+        }))
+      })
+    });
+
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Failed to edit order');
+
+    editOrderModal.classList.remove('active');
+    
+    // Refresh UI data
+    await fetchOrders(true);
+    renderStats();
+    alert('แก้ไขรายการสินค้าและจำนวนสต็อกคงคลังเรียบร้อยแล้ว!');
+  } catch (err) {
+    alert(`เกิดข้อผิดพลาดในการบันทึกการแก้ไข: ${err.message}`);
+  } finally {
+    saveEditOrderBtn.disabled = false;
+    saveEditOrderBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> บันทึกการแก้ไขออเดอร์';
+  }
 }

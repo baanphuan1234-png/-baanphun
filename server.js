@@ -444,6 +444,119 @@ app.delete('/api/orders/:id', async (req, res) => {
   res.json({ success: true });
 });
 
+// Edit Order Items (Swap products/flavors, change quantities)
+app.put('/api/orders/:id/items', async (req, res) => {
+  const { id } = req.params;
+  const { items } = req.body; // array of { id, quantity, variant }
+  
+  if (!items || !Array.isArray(items)) {
+    return res.status(400).json({ error: 'Invalid items array' });
+  }
+
+  const orders = readLocal(ORDERS_PATH);
+  const orderIndex = orders.findIndex(o => o.id === id);
+  if (orderIndex === -1) {
+    return res.status(404).json({ error: 'Order not found' });
+  }
+
+  const order = orders[orderIndex];
+  const menu = readLocal(MENU_PATH);
+  const originalOrderItems = order.items;
+
+  // Step 1: Temporarily add back stock of all items in the original order
+  const tempMenu = menu.map(menuItem => {
+    const originalItemsForThisProduct = originalOrderItems.filter(item => item.id === menuItem.id);
+    if (originalItemsForThisProduct.length > 0) {
+      if (menuItem.hasVariants && Array.isArray(menuItem.variants)) {
+        const updatedVariants = menuItem.variants.map(v => {
+          const originalVar = originalItemsForThisProduct.find(o => o.variant === v.name);
+          if (originalVar) {
+            return { ...v, stock: v.stock + originalVar.quantity };
+          }
+          return v;
+        });
+        const newTotalStock = updatedVariants.reduce((sum, v) => sum + v.stock, 0);
+        return { ...menuItem, variants: updatedVariants, stock: newTotalStock };
+      } else {
+        const totalQuantityToReturn = originalItemsForThisProduct.reduce((sum, o) => sum + o.quantity, 0);
+        return { ...menuItem, stock: menuItem.stock + totalQuantityToReturn };
+      }
+    }
+    return menuItem;
+  });
+
+  // Step 2: Validate and deduct stock for the new items list from the tempMenu
+  let hasStockError = false;
+  const errorItems = [];
+
+  const updatedMenu = tempMenu.map(menuItem => {
+    const newItemsForThisProduct = items.filter(item => item.id === menuItem.id);
+    if (newItemsForThisProduct.length > 0) {
+      if (menuItem.hasVariants && Array.isArray(menuItem.variants)) {
+        const updatedVariants = menuItem.variants.map(v => {
+          const newItemVar = newItemsForThisProduct.find(n => n.variant === v.name);
+          if (newItemVar) {
+            if (v.stock < newItemVar.quantity) {
+              hasStockError = true;
+              errorItems.push(`${menuItem.name} (${v.name}) สต็อกเหลือ ${v.stock}`);
+            } else {
+              return { ...v, stock: v.stock - newItemVar.quantity };
+            }
+          }
+          return v;
+        });
+        const newTotalStock = updatedVariants.reduce((sum, v) => sum + v.stock, 0);
+        return { ...menuItem, variants: updatedVariants, stock: newTotalStock };
+      } else {
+        const totalQuantityOrdered = newItemsForThisProduct.reduce((sum, n) => sum + n.quantity, 0);
+        if (menuItem.stock < totalQuantityOrdered) {
+          hasStockError = true;
+          errorItems.push(`${menuItem.name} สต็อกเหลือ ${menuItem.stock}`);
+        } else {
+          return { ...menuItem, stock: menuItem.stock - totalQuantityOrdered };
+        }
+      }
+    }
+    return menuItem;
+  });
+
+  if (hasStockError) {
+    return res.status(400).json({ error: `สต็อกสินค้าไม่พอ: ${errorItems.join(', ')}` });
+  }
+
+  // Calculate order total
+  let total = 0;
+  const updatedOrderItems = items.map(ordered => {
+    const original = menu.find(m => m.id === ordered.id);
+    const itemTotal = (original ? original.price : 0) * ordered.quantity;
+    total += itemTotal;
+    return {
+      id: ordered.id,
+      name: original ? original.name : 'Unknown Item',
+      price: original ? original.price : 0,
+      quantity: ordered.quantity,
+      variant: ordered.variant || ''
+    };
+  });
+
+  // Update menu and order
+  orders[orderIndex] = {
+    ...orders[orderIndex],
+    items: updatedOrderItems,
+    total: total
+  };
+
+  // Write changes locally
+  writeLocal(MENU_PATH, updatedMenu);
+  writeLocal(ORDERS_PATH, orders);
+
+  // Sync to Google Sheets
+  await syncWithGoogleSheets('saveMenu', { data: updatedMenu });
+  await syncWithGoogleSheets('saveOrder', { data: orders[orderIndex] });
+
+  res.json(orders[orderIndex]);
+});
+
 // Generate PromptPay QR
 app.get('/api/promptpay-qr', async (req, res) => {
   const amount = parseFloat(req.query.amount);
