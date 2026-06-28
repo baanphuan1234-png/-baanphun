@@ -472,6 +472,28 @@ async function submitOrder() {
     cart = {};
     updateCartUI();
 
+    // Save to LocalStorage
+    localStorage.setItem('lastOrderId', result.id);
+    checkExistingOrder();
+    
+    // Refresh Menu to update stocks
+    await fetchMenu();
+
+    // Show banner
+    showNotification('ส่งรายการสั่งซื้อของคุณเสร็จสิ้น! สามารถติดตามความคืบหน้าได้ที่ปุ่ม "ติดตามออเดอร์"');
+
+    // Close mobile cart panel if open
+    cartPanel.classList.remove('expanded');
+    cartChevron.className = "fa-solid fa-chevron-up";
+
+  } catch (error) {
+    console.error('Submit order error:', error);
+    alert(`เกิดข้อผิดพลาดในการสั่งซื้อ: ${error.message}`);
+    submitOrderBtn.disabled = false;
+    submitOrderBtn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> ยืนยันการสั่งซื้อ`;
+  }
+}
+
 // Show Notification Banner
 function showNotification(msg) {
   notificationMessage.textContent = msg;
