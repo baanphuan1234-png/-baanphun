@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QR Code เมนูสั่งอาหาร - สั่งง่าย ได้ไว</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="logo-container">
+      <div class="logo-icon">
+        <i class="fa-solid fa-utensils"></i>
+      </div>
+      <div class="logo-text">
+        <h1 id="restaurant-name">เมนูดิจิทัล</h1>
+        <p id="table-number-display">สแกนสั่งอาหารจากโต๊ะ</p>
+      </div>
+    </div>
+    <div class="btn btn-outline btn-sm" id="view-order-status-btn" style="display: none;">
+      <i class="fa-solid fa-receipt"></i> ติดตามออเดอร์
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <div class="container">
+    <!-- Search / Filter bar -->
+    <div class="card mb-4" style="padding: 1rem;">
+      <div style="display: flex; gap: 0.5rem; width: 100%;">
+        <div style="position: relative; flex: 1;">
+          <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--text-muted);"></i>
+          <input type="text" id="search-input" class="form-control" placeholder="ค้นหาเมนูอาหาร..." style="padding-left: 2.5rem;">
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Notification Banner -->
+    <div id="notification-banner" class="alert-box alert-success" style="display: none; justify-content: space-between; align-items: center;">
+      <span id="notification-message">ส่งออเดอร์เรียบร้อยแล้ว! กำลังรอแอดมินยืนยัน</span>
+      <button class="btn btn-outline btn-sm" id="close-banner-btn" style="padding: 0.25rem 0.5rem;">ปิด</button>
+    </div>
+
+    <!-- Customer Layout: Menu List + Sticky Cart -->
+    <div class="customer-layout">
+      <!-- Menu Area -->
+      <div>
+        <h2 class="mb-4" style="font-weight: 700; font-size: 1.5rem;">รายการเมนูอาหารทั้งหมด</h2>
+        <div id="loading-spinner" class="loading-spinner"></div>
+        <div id="menu-grid" class="menu-grid"></div>
+        <div id="empty-menu-message" style="display: none; text-align: center; padding: 3rem; color: var(--text-muted);">
+          <i class="fa-solid fa-circle-exclamation" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+          <p>ไม่มีเมนูอาหารในขณะนี้</p>
+        </div>
+      </div>
+
+      <!-- Cart Area (Right Panel / Bottom Sheet on mobile) -->
+      <div class="cart-panel" id="cart-panel">
+        <div class="cart-header" id="cart-header-toggle">
+          <div class="cart-title">
+            <i class="fa-solid fa-cart-shopping"></i>
+            <span>ตะกร้าสินค้าของคุณ</span>
+            <span class="cart-badge" id="cart-count">0</span>
+          </div>
+          <i class="fa-solid fa-chevron-up" id="cart-chevron" style="display: none;"></i>
+        </div>
+
+        <div class="cart-items" id="cart-items-container">
+          <div style="text-align: center; color: var(--text-muted); padding-top: 3rem;" id="empty-cart-message">
+            <i class="fa-solid fa-basket-shopping" style="font-size: 2.5rem; margin-bottom: 1rem; opacity: 0.5;"></i>
+            <p>ตะกร้าของคุณยังว่างอยู่</p>
+          </div>
+        </div>
+
+        <div class="cart-summary">
+          <div class="cart-total-row">
+            <span>ราคารวมทั้งหมด:</span>
+            <span>฿<span id="cart-total-val">0</span></span>
+          </div>
+          <button class="btn btn-primary btn-lg" id="submit-order-btn" style="width: 100%;" disabled>
+            <i class="fa-solid fa-paper-plane"></i> ยืนยันและสั่งอาหาร
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Order Status Tracking Modal -->
+  <div class="modal" id="order-status-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">ติดตามสถานะออเดอร์</h3>
+        <button class="modal-close" id="close-status-modal-btn">&times;</button>
+      </div>
+      
+      <div id="order-status-content">
+        <!-- Will be filled dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
