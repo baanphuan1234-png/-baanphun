@@ -45,8 +45,8 @@ const cache = {
   menu: { data: null, timestamp: 0 },
   orders: { data: null, timestamp: 0 }
 };
-const CACHE_DURATION_MENU = 15000; // 15 seconds cache
-const CACHE_DURATION_ORDERS = 5000; // 5 seconds cache
+const CACHE_DURATION_MENU = 60000; // 60 seconds cache
+const CACHE_DURATION_ORDERS = 30000; // 30 seconds cache
 
 // Try to initialize files locally if writeable
 try {
