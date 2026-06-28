@@ -721,14 +721,15 @@ async function loadOrderPaymentQR(orderId, total) {
     if (!response.ok) throw new Error(result.error);
     
     qrContainer.innerHTML = `
-      <div style="background-color: white; border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 1.25rem; display: inline-block; margin-bottom: 0.75rem; text-align: center; width: 100%; max-width: 280px; box-shadow: var(--shadow-sm); margin-left: auto; margin-right: auto;">
+      <div style="background-color: white; border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 1.25rem; display: inline-block; margin-bottom: 0.5rem; text-align: center; width: 100%; max-width: 280px; box-shadow: var(--shadow-sm); margin-left: auto; margin-right: auto;">
         <img src="${result.qrImage}" style="width: 100%; max-width: 220px; aspect-ratio: 1; display: block; margin: 0 auto 0.75rem auto;" alt="PromptPay QR Code">
         <div style="font-size: 1.35rem; font-weight: 700; color: #0f172a; margin-bottom: 0.25rem;">฿${total.toLocaleString()}</div>
         <div style="font-size: 0.75rem; color: #64748b; font-weight: 600;">สแกนเพื่อจ่ายเงิน</div>
       </div>
+      <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem; font-weight: 500; text-align: center;">💡 แตะค้างที่รูปภาพ QR Code ด้านบน<br>แล้วเลือก <strong>"บันทึกไปยังแอปรูปภาพ"</strong> ได้โดยตรง</div>
       <div style="margin-bottom: 1.25rem; display: flex; flex-direction: column; gap: 0.5rem; align-items: center;">
         <a class="btn btn-outline btn-sm" style="display: inline-flex; align-items: center; gap: 0.5rem; border-color: var(--primary); color: var(--primary);" href="${result.qrImage}" download="PromptPay-QR-${orderId.slice(-6)}.png">
-          <i class="fa-solid fa-download"></i> บันทึกรูปภาพ QR Code
+          <i class="fa-solid fa-download"></i> บันทึกไฟล์รูปภาพ
         </a>
       </div>
     `;
