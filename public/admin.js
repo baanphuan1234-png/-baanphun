@@ -192,7 +192,8 @@ window.addEventListener('DOMContentLoaded', () => {
   const loginWrapper = document.getElementById('login-wrapper');
   const dashboardLayout = document.getElementById('admin-dashboard-layout');
 
-  if (token) {
+  const isLoggedIn = token && token.startsWith('admin_session_token_');
+  if (isLoggedIn) {
     showDashboard(loginWrapper, dashboardLayout);
   } else {
     loginWrapper.style.display = 'flex';
