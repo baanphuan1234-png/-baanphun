@@ -430,6 +430,20 @@ app.put('/api/orders/:id', async (req, res) => {
   res.json(orders[orderIndex]);
 });
 
+// Delete Order History
+app.delete('/api/orders/:id', async (req, res) => {
+  const { id } = req.params;
+  let orders = readLocal(ORDERS_PATH);
+
+  orders = orders.filter(o => o.id !== id);
+  writeLocal(ORDERS_PATH, orders);
+
+  // Sync to Google Sheets by overwriting orders list
+  await syncWithGoogleSheets('saveOrdersList', { data: orders });
+
+  res.json({ success: true });
+});
+
 // Generate PromptPay QR
 app.get('/api/promptpay-qr', async (req, res) => {
   const amount = parseFloat(req.query.amount);

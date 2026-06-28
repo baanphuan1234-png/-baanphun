@@ -113,39 +113,64 @@
         <section id="history-section" class="admin-section">
           <div class="section-header">
             <h2 class="section-title">ประวัติการขาย & สรุปรายวัน</h2>
-            <button class="btn btn-outline btn-sm" id="refresh-stats-btn">
-              <i class="fa-solid fa-rotate"></i> ดึงรายงานล่าสุด
-            </button>
+            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+              <label for="stats-date-filter" style="margin-bottom: 0; font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">กรองวันที่:</label>
+              <input type="date" id="stats-date-filter" class="form-control" style="width: auto; padding: 0.25rem 0.5rem; font-size: 0.85rem;">
+              <button class="btn btn-outline btn-sm" id="clear-date-filter-btn" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;">ดูทั้งหมด</button>
+              <button class="btn btn-outline btn-sm" id="refresh-stats-btn" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;">
+                <i class="fa-solid fa-rotate"></i> ดึงรายงานล่าสุด
+              </button>
+            </div>
           </div>
 
           <div class="stats-summary-grid">
             <div class="stat-card">
               <div class="stat-value" id="stats-total-revenue">฿0</div>
-              <div class="stat-label">ยอดขายสะสมทั้งหมด</div>
+              <div class="stat-label" id="label-revenue">ยอดขายสะสมทั้งหมด</div>
             </div>
             <div class="stat-card">
               <div class="stat-value" id="stats-total-orders">0</div>
-              <div class="stat-label">ออเดอร์สำเร็จทั้งหมด</div>
+              <div class="stat-label" id="label-orders">ออเดอร์สำเร็จทั้งหมด</div>
             </div>
             <div class="stat-card">
               <div class="stat-value" id="stats-top-item">-</div>
-              <div class="stat-label">เมนูขายดีที่สุด</div>
+              <div class="stat-label">สินค้าขายดีที่สุด</div>
             </div>
           </div>
 
           <h3 class="mb-4">สรุปยอดขายรายวัน</h3>
-          <div class="report-table-container">
+          <div class="report-table-container mb-4">
             <table class="report-table">
               <thead>
                 <tr>
                   <th>วันที่</th>
                   <th>จำนวนออเดอร์</th>
-                  <th>เมนูที่ขายได้ (จำนวน)</th>
+                  <th>สินค้าที่ขายได้ (จำนวน)</th>
                   <th>ยอดรวมรายวัน</th>
                 </tr>
               </thead>
               <tbody id="stats-table-body">
                 <!-- Daily stats rows -->
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="mb-4 mt-4">ประวัติรายการสั่งซื้อย่อย</h3>
+          <div class="report-table-container">
+            <table class="report-table">
+              <thead>
+                <tr>
+                  <th>วันที่/เวลา</th>
+                  <th>รหัสออเดอร์</th>
+                  <th>จุดบริการ</th>
+                  <th>รายการสินค้า</th>
+                  <th>ยอดรวม</th>
+                  <th>สถานะการจ่ายเงิน</th>
+                  <th>จัดการ</th>
+                </tr>
+              </thead>
+              <tbody id="detailed-history-table-body">
+                <!-- Detailed transactions list -->
               </tbody>
             </table>
           </div>

@@ -126,6 +126,17 @@ function doPost(e) {
     return jsonResponse({ success: true });
   }
   
+  if (action === "saveOrdersList") {
+    var sheet = getOrCreateSheet(ss, SHEET_NAME_ORDERS, ["id", "timestamp", "items", "total", "status", "paymentStatus"]);
+    clearSheetData(sheet);
+    var ordersList = postData.data || [];
+    ordersList.forEach(function(order) {
+      var itemsStr = JSON.stringify(order.items);
+      sheet.appendRow([order.id, order.timestamp, itemsStr, order.total, order.status, order.paymentStatus]);
+    });
+    return jsonResponse({ success: true });
+  }
+  
   if (action === "saveOrder") {
     var sheet = getOrCreateSheet(ss, SHEET_NAME_ORDERS, ["id", "timestamp", "items", "total", "status", "paymentStatus"]);
     var order = postData.data;
@@ -343,6 +354,25 @@ function setupEventListeners() {
   // Manual refresh buttons
   refreshOrdersBtn.addEventListener('click', () => fetchOrders(false));
   refreshStatsBtn.addEventListener('click', () => fetchStats(false));
+
+  // Date filter for sales report
+  const statsDateFilter = document.getElementById('stats-date-filter');
+  const clearDateFilterBtn = document.getElementById('clear-date-filter-btn');
+
+  if (statsDateFilter) {
+    statsDateFilter.addEventListener('change', () => {
+      selectedStatsDate = statsDateFilter.value;
+      renderStats();
+    });
+  }
+
+  if (clearDateFilterBtn) {
+    clearDateFilterBtn.addEventListener('click', () => {
+      statsDateFilter.value = '';
+      selectedStatsDate = null;
+      renderStats();
+    });
+  }
 }
 
 // Get App Settings
@@ -828,86 +858,214 @@ window.closePaymentModal = function() {
 };
 
 // Statistics tab logic
+let selectedStatsDate = null;
+
 async function fetchStats(silent = false) {
+  if (!silent) stockLoading.style.display = 'block';
   try {
-    const response = await fetch('/api/stats');
-    const statsData = await response.json();
-    renderStats(statsData);
+    const response = await fetch('/api/orders');
+    orders = await response.json();
+    
+    // Sort orders
+    orders.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    renderOrdersBoard(orders);
+    updateOrderBadges(orders);
+    renderStats();
   } catch (err) {
     console.error('Error fetching statistics:', err);
+  } finally {
+    if (!silent) stockLoading.style.display = 'none';
   }
 }
 
-// Render Stats Table and Cards
-function renderStats(stats) {
-  const dates = Object.keys(stats).sort((a, b) => new Date(b) - new Date(a));
-  
-  if (dates.length === 0) {
-    emptyStatsMessage.style.display = 'block';
-    statsTableBody.innerHTML = '';
-    statsTotalRevenue.textContent = '฿0';
-    statsTotalOrders.textContent = '0';
-    statsTopItem.textContent = '-';
-    return;
+function renderStats() {
+  const statsTotalRevenue = document.getElementById('stats-total-revenue');
+  const statsTotalOrders = document.getElementById('stats-total-orders');
+  const statsTopItem = document.getElementById('stats-top-item');
+  const statsTableBody = document.getElementById('stats-table-body');
+  const detailedHistoryTableBody = document.getElementById('detailed-history-table-body');
+  const emptyStatsMessage = document.getElementById('empty-stats-message');
+  const labelRevenue = document.getElementById('label-revenue');
+  const labelOrders = document.getElementById('label-orders');
+
+  // Filter orders based on selected date
+  let filteredOrders = orders;
+  if (selectedStatsDate) {
+    filteredOrders = orders.filter(order => {
+      const orderDateStr = order.timestamp.split('T')[0];
+      return orderDateStr === selectedStatsDate;
+    });
+    
+    const [y, m, d] = selectedStatsDate.split('-');
+    labelRevenue.textContent = `ยอดขายวันที่ ${d}/${m}/${y}`;
+    labelOrders.textContent = `ออเดอร์สำเร็จวันที่ ${d}/${m}/${y}`;
+  } else {
+    labelRevenue.textContent = 'ยอดขายสะสมทั้งหมด';
+    labelOrders.textContent = 'ออเดอร์สำเร็จทั้งหมด';
   }
+
+  // Calculate totals card metrics (Only count paid or completed)
+  const completedPaidOrders = filteredOrders.filter(o => o.status === 'completed' || o.paymentStatus === 'paid');
   
-  emptyStatsMessage.style.display = 'none';
+  let totalRevenue = 0;
+  let totalOrdersCount = completedPaidOrders.length;
+  const itemsSold = {};
 
-  let grandTotalRevenue = 0;
-  let grandTotalOrders = 0;
-  const globalItemsSold = {}; // itemName -> count
-
-  let tableHtml = '';
-
-  dates.forEach(date => {
-    const dayData = stats[date];
-    grandTotalRevenue += dayData.totalRevenue;
-    grandTotalOrders += dayData.orderCount;
-
-    // Items list column text
-    const itemsTextList = Object.keys(dayData.itemsSold).map(name => {
-      const qty = dayData.itemsSold[name];
-      
-      // Keep track of top selling items globally
-      if (!globalItemsSold[name]) globalItemsSold[name] = 0;
-      globalItemsSold[name] += qty;
-
-      return `${name} (${qty})`;
-    }).join(', ');
-
-    // Convert date string back to Thai format
-    const [y, m, d] = date.split('-');
-    const thaiDate = `${d}/${m}/${y}`;
-
-    tableHtml += `
-      <tr>
-        <td><strong>${thaiDate}</strong></td>
-        <td>${dayData.orderCount} ออเดอร์</td>
-        <td style="font-size: 0.85rem; color:var(--text-muted); max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${itemsTextList}">
-          ${itemsTextList || 'ไม่มีเมนู (ยกเลิก)'}
-        </td>
-        <td><strong class="text-success">฿${dayData.totalRevenue.toLocaleString()}</strong></td>
-      </tr>
-    `;
+  completedPaidOrders.forEach(order => {
+    totalRevenue += parseFloat(order.total) || 0;
+    
+    let items = order.items;
+    if (typeof items === 'string') {
+      try { items = JSON.parse(items); } catch (e) { items = []; }
+    }
+    
+    if (Array.isArray(items)) {
+      items.forEach(item => {
+        const displayName = item.variant ? `${item.name} (${item.variant})` : item.name;
+        if (!itemsSold[displayName]) itemsSold[displayName] = 0;
+        itemsSold[displayName] += parseInt(item.quantity) || 0;
+      });
+    }
   });
 
-  statsTableBody.innerHTML = tableHtml;
+  statsTotalRevenue.textContent = `฿${totalRevenue.toLocaleString()}`;
+  statsTotalOrders.textContent = totalOrdersCount.toLocaleString();
 
-  // Render stats cards
-  statsTotalRevenue.textContent = `฿${grandTotalRevenue.toLocaleString()}`;
-  statsTotalOrders.textContent = grandTotalOrders.toLocaleString();
-
-  // Find best selling item
   let topItemName = '-';
   let maxSold = 0;
-  Object.keys(globalItemsSold).forEach(name => {
-    if (globalItemsSold[name] > maxSold) {
-      maxSold = globalItemsSold[name];
+  Object.keys(itemsSold).forEach(name => {
+    if (itemsSold[name] > maxSold) {
+      maxSold = itemsSold[name];
       topItemName = `${name} (${maxSold} ชิ้น)`;
     }
   });
   statsTopItem.textContent = topItemName;
+
+  // 1. Group all orders by date for daily summaries table
+  const dailyGroups = {};
+  orders.forEach(order => {
+    if (order.status !== 'completed' && order.paymentStatus !== 'paid') return;
+    
+    const dateStr = order.timestamp.split('T')[0];
+    if (!dailyGroups[dateStr]) {
+      dailyGroups[dateStr] = {
+        revenue: 0,
+        orders: 0,
+        items: {}
+      };
+    }
+    
+    dailyGroups[dateStr].revenue += parseFloat(order.total) || 0;
+    dailyGroups[dateStr].orders += 1;
+
+    let items = order.items;
+    if (typeof items === 'string') {
+      try { items = JSON.parse(items); } catch (e) { items = []; }
+    }
+    if (Array.isArray(items)) {
+      items.forEach(item => {
+        const displayName = item.variant ? `${item.name} (${item.variant})` : item.name;
+        if (!dailyGroups[dateStr].items[displayName]) dailyGroups[dateStr].items[displayName] = 0;
+        dailyGroups[dateStr].items[displayName] += parseInt(item.quantity) || 0;
+      });
+    }
+  });
+
+  const sortedDates = Object.keys(dailyGroups).sort((a, b) => new Date(b) - new Date(a));
+  
+  if (sortedDates.length === 0) {
+    emptyStatsMessage.style.display = 'block';
+    statsTableBody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:1.5rem; color:var(--text-muted);">ไม่มีสถิติยอดขายสำเร็จ</td></tr>';
+  } else {
+    emptyStatsMessage.style.display = 'none';
+    statsTableBody.innerHTML = sortedDates.map(date => {
+      const day = dailyGroups[date];
+      const itemsListText = Object.keys(day.items).map(name => `${name} (${day.items[name]})`).join(', ');
+      
+      const [y, m, d] = date.split('-');
+      const formattedDate = `${d}/${m}/${y}`;
+      
+      return `
+        <tr>
+          <td><strong>${formattedDate}</strong></td>
+          <td>${day.orders} ออเดอร์</td>
+          <td style="font-size: 0.85rem; color:var(--text-muted); max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${itemsListText}">
+            ${itemsListText || 'ไม่มีรายละเอียด'}
+          </td>
+          <td><strong class="text-success">฿${day.revenue.toLocaleString()}</strong></td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // 2. Render Detailed Transactions list (Filtered by selected date)
+  if (filteredOrders.length === 0) {
+    detailedHistoryTableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:3rem; color:var(--text-muted);"><i class="fa-solid fa-folder-open" style="font-size:2rem;margin-bottom:0.5rem;display:block;"></i>ไม่มีข้อมูลประวัติการสั่งซื้อ</td></tr>';
+  } else {
+    detailedHistoryTableBody.innerHTML = filteredOrders.map(order => {
+      const dt = new Date(order.timestamp);
+      const dateStr = dt.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const timeStr = dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+      const formattedDateTime = `${dateStr} ${timeStr} น.`;
+
+      let items = order.items;
+      if (typeof items === 'string') {
+        try { items = JSON.parse(items); } catch (e) { items = []; }
+      }
+      const itemsListHtml = Array.isArray(items) ? items.map(item => {
+        const displayName = item.variant ? `${item.name} (${item.variant})` : item.name;
+        return `<div>• ${displayName} x ${item.quantity}</div>`;
+      }).join('') : 'ไม่มีรายการ';
+
+      let paymentStatusBadge = '';
+      if (order.paymentStatus === 'paid') {
+        paymentStatusBadge = '<span class="text-success" style="font-weight:600;"><i class="fa-solid fa-circle-check"></i> ชำระแล้ว</span>';
+      } else if (order.status === 'cancelled') {
+        paymentStatusBadge = '<span class="text-danger" style="font-weight:600;"><i class="fa-solid fa-ban"></i> ยกเลิกออเดอร์</span>';
+      } else {
+        paymentStatusBadge = '<span class="text-primary" style="font-weight:600;"><i class="fa-solid fa-clock"></i> รอชำระเงิน</span>';
+      }
+
+      return `
+        <tr>
+          <td style="font-size:0.85rem;">${formattedDateTime}</td>
+          <td><code style="font-size:0.8rem;">${order.id.slice(-6).toUpperCase()}</code></td>
+          <td><strong>${order.table || 'ทั่วไป'}</strong></td>
+          <td style="font-size:0.85rem; text-align:left;">${itemsListHtml}</td>
+          <td><strong>฿${(parseFloat(order.total) || 0).toLocaleString()}</strong></td>
+          <td>${paymentStatusBadge}</td>
+          <td>
+            <button class="btn btn-outline btn-sm btn-danger" style="padding: 0.25rem 0.5rem; border-color:var(--danger); color:var(--danger);" onclick="deleteOrderHistory('${order.id}')" title="ลบประวัติออเดอร์">
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
 }
+
+window.deleteOrderHistory = async function(orderId) {
+  if (!confirm(`คุณต้องการลบประวัติการสั่งซื้อรหัส ${orderId.slice(-6).toUpperCase()} ใช่หรือไม่?\nการลบนี้จะลบข้อมูลออกจากฐานข้อมูลและไฟล์ Google Sheets ด้วยอย่างถาวร`)) {
+    return;
+  }
+  
+  try {
+    const response = await fetch(`/api/orders/${orderId}`, {
+      method: 'DELETE'
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+    
+    // Reload menu and stats
+    await fetchOrders(true);
+    renderStats();
+    alert('ลบประวัติการสั่งซื้อเรียบร้อยแล้ว!');
+  } catch (err) {
+    alert(`เกิดข้อผิดพลาดในการลบประวัติ: ${err.message}`);
+  }
+};
 
 // Tabletop QR code generator
 async function generateTableQrCode() {
