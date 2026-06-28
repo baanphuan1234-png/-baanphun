@@ -1167,7 +1167,7 @@ let editingOrderItems = []; // [{ id, name, price, quantity, variant }]
 
 window.openEditOrderModal = function(orderId) {
   const order = orders.find(o => o.id === orderId);
-  if (!item || !order) return;
+  if (!order) return;
 
   editingOrderId = orderId;
   editingOrderOriginalTotal = parseFloat(order.total) || 0;
