@@ -277,9 +277,30 @@
             <label for="product-price">ราคา (บาท)</label>
             <input type="number" id="product-price" class="form-control" required min="0" step="0.5" placeholder="เช่น 60">
           </div>
-          <div class="form-group">
-            <label for="product-stock">จำนวนสต็อกเริ่มต้น</label>
-            <input type="number" id="product-stock" class="form-control" required min="0" placeholder="เช่น 50">
+        </div>
+        
+        <!-- Has Variants Toggle -->
+        <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; margin-bottom: 1rem;">
+          <input type="checkbox" id="product-has-variants" style="width: auto; cursor: pointer; margin-top: 2px;">
+          <label for="product-has-variants" style="margin-bottom: 0; cursor: pointer; font-weight: 600;">สินค้านี้มีตัวเลือกย่อย (เช่น แยกกลิ่น/รสชาติ/สี)</label>
+        </div>
+
+        <!-- Single Stock Group -->
+        <div class="form-group" id="single-stock-group">
+          <label for="product-stock">จำนวนสต็อกเริ่มต้น</label>
+          <input type="number" id="product-stock" class="form-control" required min="0" placeholder="เช่น 50">
+        </div>
+
+        <!-- Variants Group -->
+        <div id="variants-group" style="display: none; border: 1px solid var(--border-color); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem; background-color: var(--bg-main);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <label style="font-weight: 700; margin-bottom: 0; font-size: 0.9rem;">กลิ่นน้ำยา / สต็อกย่อย</label>
+            <button type="button" class="btn btn-outline btn-sm" id="add-variant-option-btn" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
+              <i class="fa-solid fa-plus"></i> เพิ่มตัวเลือกกลิ่น
+            </button>
+          </div>
+          <div id="variants-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <!-- Added variants will be shown here dynamically -->
           </div>
         </div>
         <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;" id="save-product-btn">

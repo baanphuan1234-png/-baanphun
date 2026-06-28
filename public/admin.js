@@ -43,6 +43,11 @@ const productPriceInput = document.getElementById('product-price');
 const productStockInput = document.getElementById('product-stock');
 const productImageFile = document.getElementById('product-image-file');
 const productImageUrl = document.getElementById('product-image-url');
+const productHasVariants = document.getElementById('product-has-variants');
+const singleStockGroup = document.getElementById('single-stock-group');
+const variantsGroup = document.getElementById('variants-group');
+const addVariantOptionBtn = document.getElementById('add-variant-option-btn');
+const variantsList = document.getElementById('variants-list');
 const imageUploadBox = document.getElementById('image-upload-box');
 const uploadPlaceholder = document.getElementById('upload-placeholder');
 
@@ -79,7 +84,7 @@ function doGet(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   
   if (action === "getMenu") {
-    var sheet = getOrCreateSheet(ss, SHEET_NAME_MENU, ["id", "name", "price", "stock", "image"]);
+    var sheet = getOrCreateSheet(ss, SHEET_NAME_MENU, ["id", "name", "price", "stock", "image", "hasVariants", "variants"]);
     var data = getSheetData(sheet);
     return jsonResponse(data);
   }
@@ -112,11 +117,11 @@ function doPost(e) {
   var action = postData.action;
   
   if (action === "saveMenu") {
-    var sheet = getOrCreateSheet(ss, SHEET_NAME_MENU, ["id", "name", "price", "stock", "image"]);
+    var sheet = getOrCreateSheet(ss, SHEET_NAME_MENU, ["id", "name", "price", "stock", "image", "hasVariants", "variants"]);
     clearSheetData(sheet);
     var menuItems = postData.data || [];
     menuItems.forEach(function(item) {
-      sheet.appendRow([item.id, item.name, item.price, item.stock, item.image]);
+      sheet.appendRow([item.id, item.name, item.price, item.stock, item.image, String(item.hasVariants), item.variants ? JSON.stringify(item.variants) : ""]);
     });
     return jsonResponse({ success: true });
   }
@@ -318,6 +323,23 @@ function setupEventListeners() {
   imageUploadBox.addEventListener('click', () => productImageFile.click());
   productImageFile.addEventListener('change', handleImageUpload);
 
+  // Variant Toggle & Add Buttons
+  productHasVariants.addEventListener('change', () => {
+    if (productHasVariants.checked) {
+      singleStockGroup.style.display = 'none';
+      variantsGroup.style.display = 'block';
+      productStockInput.required = false;
+    } else {
+      singleStockGroup.style.display = 'block';
+      variantsGroup.style.display = 'none';
+      productStockInput.required = true;
+    }
+  });
+
+  addVariantOptionBtn.addEventListener('click', () => {
+    addVariantOptionRow("", 0);
+  });
+
   // Manual refresh buttons
   refreshOrdersBtn.addEventListener('click', () => fetchOrders(false));
   refreshStatsBtn.addEventListener('click', () => fetchStats(false));
@@ -417,14 +439,26 @@ function renderStockGrid(items) {
   }
 
   stockGrid.innerHTML = items.map(item => {
-    const itemImageSrc = item.image || 'https://placehold.co/600x400/f1f5f9/94a3b8?text=Food';
+    const itemImageSrc = item.image || 'https://placehold.co/600x400/f1f5f9/94a3b8?text=Product';
+    
+    let variantsHtml = '';
+    let displayStock = `${item.stock}`;
+    if (item.hasVariants && Array.isArray(item.variants)) {
+      const sumStock = item.variants.reduce((sum, v) => sum + v.stock, 0);
+      displayStock = `${sumStock} (รวม)`;
+      variantsHtml = `<div style="font-size: 0.75rem; margin-top: 0.5rem; color: var(--text-muted); border-top: 1px dashed var(--border-color); padding-top: 0.25rem; text-align: left;">` + 
+        item.variants.map(v => `<div>• ${v.name}: <strong>${v.stock}</strong> ชิ้น</div>`).join('') +
+        `</div>`;
+    }
+
     return `
       <div class="stock-item-card">
-        <img src="${itemImageSrc}" class="stock-item-img" alt="${item.name}" onerror="this.onerror=null; this.src='https://placehold.co/600x400/f1f5f9/94a3b8?text=Food';">
+        <img src="${itemImageSrc}" class="stock-item-img" alt="${item.name}" onerror="this.onerror=null; this.src='https://placehold.co/600x400/f1f5f9/94a3b8?text=Product';">
         <div class="stock-item-details">
           <div class="stock-item-name">${item.name}</div>
           <div class="stock-item-price">฿${item.price.toLocaleString()}</div>
-          <div class="stock-item-qty">สต็อก: <strong>${item.stock}</strong> ชิ้น</div>
+          <div class="stock-item-qty">สต็อก: <strong>${displayStock}</strong> ชิ้น</div>
+          ${variantsHtml}
         </div>
         <div class="stock-actions">
           <button class="btn btn-outline btn-sm" style="padding: 0.25rem 0.5rem;" onclick="openEditProductModal('${item.id}')">
@@ -489,6 +523,9 @@ function openAddProductModal() {
   productModalTitle.textContent = 'เพิ่มสินค้าใหม่';
   productIdInput.value = '';
   productForm.reset();
+  variantsList.innerHTML = '';
+  productHasVariants.checked = false;
+  productHasVariants.dispatchEvent(new Event('change'));
   resetImagePreview();
   productModal.classList.add('active');
 }
@@ -504,6 +541,17 @@ function openEditProductModal(id) {
   productStockInput.value = item.stock;
   productImageUrl.value = item.image || '';
 
+  variantsList.innerHTML = '';
+  if (item.hasVariants) {
+    productHasVariants.checked = true;
+    if (Array.isArray(item.variants)) {
+      item.variants.forEach(v => addVariantOptionRow(v.name, v.stock));
+    }
+  } else {
+    productHasVariants.checked = false;
+  }
+  productHasVariants.dispatchEvent(new Event('change'));
+
   if (item.image) {
     showImagePreview(item.image);
   } else {
@@ -513,15 +561,51 @@ function openEditProductModal(id) {
   productModal.classList.add('active');
 }
 
+function addVariantOptionRow(name = "", stock = 0) {
+  const row = document.createElement('div');
+  row.className = 'variant-option-row';
+  row.style.display = 'grid';
+  row.style.gridTemplateColumns = '2fr 1fr auto';
+  row.style.gap = '0.5rem';
+  row.style.alignItems = 'center';
+  row.style.marginBottom = '0.5rem';
+
+  row.innerHTML = `
+    <input type="text" class="form-control variant-name-input" placeholder="เช่น กลิ่นองุ่น" value="${name}" required style="padding: 0.35rem 0.5rem; font-size: 0.85rem;">
+    <input type="number" class="form-control variant-stock-input" placeholder="สต็อก" min="0" value="${stock}" required style="padding: 0.35rem 0.5rem; font-size: 0.85rem;">
+    <button type="button" class="btn btn-outline btn-sm btn-danger" style="padding: 0.35rem 0.5rem; border-color:var(--danger); color:var(--danger);" onclick="this.parentElement.remove()">
+      <i class="fa-solid fa-trash-can"></i>
+    </button>
+  `;
+  variantsList.appendChild(row);
+}
+
 async function saveProduct(e) {
   e.preventDefault();
   const id = productIdInput.value;
   const name = productNameInput.value.trim();
   const price = parseFloat(productPriceInput.value);
-  const stock = parseInt(productStockInput.value);
   const image = productImageUrl.value.trim();
+  
+  const hasVariants = productHasVariants.checked;
+  let stock = 0;
+  let variants = [];
 
-  const payload = { name, price, stock, image };
+  if (hasVariants) {
+    const rows = variantsList.querySelectorAll('.variant-option-row');
+    rows.forEach(row => {
+      const vName = row.querySelector('.variant-name-input').value.trim();
+      const vStock = parseInt(row.querySelector('.variant-stock-input').value) || 0;
+      if (vName) {
+        variants.push({ name: vName, stock: vStock });
+        stock += vStock;
+      }
+    });
+  } else {
+    stock = parseInt(productStockInput.value) || 0;
+  }
+
+  const payload = { name, price, stock, image, hasVariants, variants };
   const isEdit = !!id;
   
   const saveBtn = document.getElementById('save-product-btn');
@@ -619,7 +703,7 @@ function renderOrdersBoard(ordersList) {
   ordersBoard.innerHTML = activeOrders.map(order => {
     const itemsHtml = order.items.map(item => `
       <div class="order-item-row">
-        <span>${item.name} x ${item.quantity}</span>
+        <span>${item.name}${item.variant ? ' (' + item.variant + ')' : ''} x ${item.quantity}</span>
         <span>฿${(item.price * item.quantity).toLocaleString()}</span>
       </div>
     `).join('');

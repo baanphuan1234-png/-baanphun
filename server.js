@@ -173,7 +173,9 @@ app.get('/api/menu', async (req, res) => {
       name: String(item.name),
       price: parseFloat(item.price) || 0,
       stock: parseInt(item.stock) || 0,
-      image: String(item.image || '')
+      image: String(item.image || ''),
+      hasVariants: item.hasVariants === 'true' || item.hasVariants === true,
+      variants: item.variants ? (typeof item.variants === 'string' ? JSON.parse(item.variants) : item.variants) : []
     }));
     writeLocal(MENU_PATH, formattedMenu); // Keep local in sync
     return res.json(formattedMenu);
@@ -184,7 +186,7 @@ app.get('/api/menu', async (req, res) => {
 });
 
 app.post('/api/menu', async (req, res) => {
-  const { name, price, stock, image } = req.body;
+  const { name, price, stock, image, hasVariants, variants } = req.body;
   const menu = readLocal(MENU_PATH);
   
   const newItem = {
@@ -192,7 +194,9 @@ app.post('/api/menu', async (req, res) => {
     name: name || 'Unnamed Item',
     price: parseFloat(price) || 0,
     stock: parseInt(stock) || 0,
-    image: image || ''
+    image: image || '',
+    hasVariants: !!hasVariants,
+    variants: Array.isArray(variants) ? variants : []
   };
   
   menu.push(newItem);
@@ -206,7 +210,7 @@ app.post('/api/menu', async (req, res) => {
 
 app.put('/api/menu/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, price, stock, image } = req.body;
+  const { name, price, stock, image, hasVariants, variants } = req.body;
   const menu = readLocal(MENU_PATH);
   
   const itemIndex = menu.findIndex(item => item.id === id);
@@ -219,7 +223,9 @@ app.put('/api/menu/:id', async (req, res) => {
     name: name !== undefined ? name : menu[itemIndex].name,
     price: price !== undefined ? parseFloat(price) : menu[itemIndex].price,
     stock: stock !== undefined ? parseInt(stock) : menu[itemIndex].stock,
-    image: image !== undefined ? image : menu[itemIndex].image
+    image: image !== undefined ? image : menu[itemIndex].image,
+    hasVariants: hasVariants !== undefined ? !!hasVariants : menu[itemIndex].hasVariants,
+    variants: variants !== undefined ? (Array.isArray(variants) ? variants : []) : menu[itemIndex].variants
   };
   
   writeLocal(MENU_PATH, menu);
@@ -268,16 +274,44 @@ app.post('/api/orders', async (req, res) => {
   const errorItems = [];
 
   const updatedMenu = menu.map(menuItem => {
-    const orderedItem = items.find(item => item.id === menuItem.id);
-    if (orderedItem) {
-      if (menuItem.stock < orderedItem.quantity) {
-        hasStockError = true;
-        errorItems.push(menuItem.name);
-      } else {
+    // Filter all order entries matching this menuItem.id
+    const orderedItemsForThisProduct = items.filter(item => item.id === menuItem.id);
+    
+    if (orderedItemsForThisProduct.length > 0) {
+      if (menuItem.hasVariants && Array.isArray(menuItem.variants)) {
+        // This product has variants. We must check and deduct stock for each ordered variant.
+        const updatedVariants = menuItem.variants.map(v => {
+          const orderedVariant = orderedItemsForThisProduct.find(o => o.variant === v.name);
+          if (orderedVariant) {
+            if (v.stock < orderedVariant.quantity) {
+              hasStockError = true;
+              errorItems.push(`${menuItem.name} (${v.name}) สต็อกเหลือ ${v.stock}`);
+            } else {
+              return { ...v, stock: v.stock - orderedVariant.quantity };
+            }
+          }
+          return v;
+        });
+        
+        // Calculate total stock as sum of variants stock
+        const newTotalStock = updatedVariants.reduce((sum, v) => sum + v.stock, 0);
         return {
           ...menuItem,
-          stock: menuItem.stock - orderedItem.quantity
+          variants: updatedVariants,
+          stock: newTotalStock
         };
+      } else {
+        // Product has no variants. Deduct top-level stock.
+        const totalQuantityOrdered = orderedItemsForThisProduct.reduce((sum, o) => sum + o.quantity, 0);
+        if (menuItem.stock < totalQuantityOrdered) {
+          hasStockError = true;
+          errorItems.push(`${menuItem.name} สต็อกเหลือ ${menuItem.stock}`);
+        } else {
+          return {
+            ...menuItem,
+            stock: menuItem.stock - totalQuantityOrdered
+          };
+        }
       }
     }
     return menuItem;
@@ -301,7 +335,8 @@ app.post('/api/orders', async (req, res) => {
       id: ordered.id,
       name: original ? original.name : 'Unknown Item',
       price: original ? original.price : 0,
-      quantity: ordered.quantity
+      quantity: ordered.quantity,
+      variant: ordered.variant || '' // Keep track of selected variant/flavor
     };
   });
 
@@ -340,12 +375,32 @@ app.put('/api/orders/:id', async (req, res) => {
     const orderItems = orders[orderIndex].items;
     
     const updatedMenu = menu.map(menuItem => {
-      const orderedItem = orderItems.find(item => item.id === menuItem.id);
-      if (orderedItem) {
-        return {
-          ...menuItem,
-          stock: menuItem.stock + orderedItem.quantity
-        };
+      const cancelledItemsForThisProduct = orderItems.filter(item => item.id === menuItem.id);
+      
+      if (cancelledItemsForThisProduct.length > 0) {
+        if (menuItem.hasVariants && Array.isArray(menuItem.variants)) {
+          // Return stock to each specific variant
+          const updatedVariants = menuItem.variants.map(v => {
+            const cancelledVar = cancelledItemsForThisProduct.find(c => c.variant === v.name);
+            if (cancelledVar) {
+              return { ...v, stock: v.stock + cancelledVar.quantity };
+            }
+            return v;
+          });
+          const newTotalStock = updatedVariants.reduce((sum, v) => sum + v.stock, 0);
+          return {
+            ...menuItem,
+            variants: updatedVariants,
+            stock: newTotalStock
+          };
+        } else {
+          // Return stock to top-level
+          const totalQuantityToReturn = cancelledItemsForThisProduct.reduce((sum, c) => sum + c.quantity, 0);
+          return {
+            ...menuItem,
+            stock: menuItem.stock + totalQuantityToReturn
+          };
+        }
       }
       return menuItem;
     });

@@ -110,42 +110,59 @@ function renderMenu(items) {
   emptyMenuMessage.style.display = 'none';
 
   menuGrid.innerHTML = items.map(item => {
-    const qtyInCart = cart[item.id] || 0;
-    
     // Determine stock status and tags
     let stockTagClass = 'stock-ok';
     let stockText = `คงเหลือ: ${item.stock}`;
     let isOutOfStock = item.stock <= 0;
     let addBtnHtml = '';
 
-    if (item.stock === 0) {
-      stockTagClass = 'stock-out';
-      stockText = 'หมดชั่วคราว';
-      addBtnHtml = `<button class="btn btn-outline btn-sm" disabled style="width: 100%;">สินค้าหมด</button>`;
-    } else {
-      if (item.stock <= 5) {
-        stockTagClass = 'stock-low';
-        stockText = `เหลือเพียง ${item.stock} ชิ้น`;
-      }
-      
-      if (qtyInCart > 0) {
-        addBtnHtml = `
-          <div class="quantity-control" style="width: 100%; justify-content: space-between;">
-            <button class="qty-btn" onclick="updateCartQty('${item.id}', -1)">-</button>
-            <span class="qty-val">${qtyInCart}</span>
-            <button class="qty-btn" onclick="updateCartQty('${item.id}', 1)" ${qtyInCart >= item.stock ? 'disabled' : ''}>+</button>
-          </div>
-        `;
+    if (item.hasVariants && Array.isArray(item.variants)) {
+      const totalStock = item.variants.reduce((sum, v) => sum + v.stock, 0);
+      isOutOfStock = totalStock <= 0;
+      if (isOutOfStock) {
+        stockTagClass = 'stock-out';
+        stockText = 'สินค้าหมด';
+        addBtnHtml = `<button class="btn btn-outline btn-sm" disabled style="width: 100%;">สินค้าหมด</button>`;
       } else {
-        addBtnHtml = `<button class="btn btn-primary btn-sm" style="width: 100%;" onclick="addToCart('${item.id}')"><i class="fa-solid fa-plus"></i> เพิ่มใส่ตะกร้า</button>`;
+        if (totalStock <= 5) {
+          stockTagClass = 'stock-low';
+          stockText = `เหลือเพียง ${totalStock} ชิ้น`;
+        } else {
+          stockText = `มีตัวเลือก (${totalStock} ชิ้น)`;
+        }
+        addBtnHtml = `<button class="btn btn-primary btn-sm" style="width: 100%;" onclick="openProductDetailModal('${item.id}')"><i class="fa-solid fa-circle-info"></i> เลือกกลิ่น</button>`;
+      }
+    } else {
+      const qtyInCart = cart[item.id] || 0;
+      if (item.stock === 0) {
+        stockTagClass = 'stock-out';
+        stockText = 'สินค้าหมด';
+        addBtnHtml = `<button class="btn btn-outline btn-sm" disabled style="width: 100%;">สินค้าหมด</button>`;
+      } else {
+        if (item.stock <= 5) {
+          stockTagClass = 'stock-low';
+          stockText = `เหลือเพียง ${item.stock} ชิ้น`;
+        }
+        
+        if (qtyInCart > 0) {
+          addBtnHtml = `
+            <div class="quantity-control" style="width: 100%; justify-content: space-between;">
+              <button class="qty-btn" onclick="updateCartQty('${item.id}', -1)">-</button>
+              <span class="qty-val">${qtyInCart}</span>
+              <button class="qty-btn" onclick="updateCartQty('${item.id}', 1)" ${qtyInCart >= item.stock ? 'disabled' : ''}>+</button>
+            </div>
+          `;
+        } else {
+          addBtnHtml = `<button class="btn btn-primary btn-sm" style="width: 100%;" onclick="addToCart('${item.id}')"><i class="fa-solid fa-plus"></i> เพิ่มใส่ตะกร้า</button>`;
+        }
       }
     }
 
-    const itemImageSrc = item.image || 'https://placehold.co/600x400/f1f5f9/94a3b8?text=Food';
+    const itemImageSrc = item.image || 'https://placehold.co/600x400/f1f5f9/94a3b8?text=Product';
 
     return `
-      <div class="menu-item-card" data-id="${item.id}">
-        <img src="${itemImageSrc}" class="menu-item-img" alt="${item.name}" onerror="this.onerror=null; this.src='https://placehold.co/600x400/f1f5f9/94a3b8?text=Food';">
+      <div class="menu-item-card" data-id="${item.id}" onclick="handleCardClick(event, '${item.id}')" style="cursor: pointer;">
+        <img src="${itemImageSrc}" class="menu-item-img" alt="${item.name}" onerror="this.onerror=null; this.src='https://placehold.co/600x400/f1f5f9/94a3b8?text=Product';">
         <div class="menu-item-info">
           <div class="menu-item-name">${item.name}</div>
           <div class="menu-item-price">฿${item.price.toLocaleString()}</div>
@@ -161,7 +178,163 @@ function renderMenu(items) {
   }).join('');
 }
 
-// Filter Menu Items by search
+function handleCardClick(event, itemId) {
+  if (event.target.closest('.quantity-control') || event.target.closest('.btn') || event.target.closest('.qty-btn')) {
+    return;
+  }
+  openProductDetailModal(itemId);
+}
+
+let selectedProductId = null;
+let selectedVariantName = null;
+let currentDetailQty = 1;
+
+const productDetailModal = document.getElementById('product-detail-modal');
+const closeDetailModalBtn = document.getElementById('close-detail-modal-btn');
+const detailProductName = document.getElementById('detail-product-name');
+const detailProductImage = document.getElementById('detail-product-image');
+const detailProductPrice = document.getElementById('detail-product-price');
+const detailOverallStock = document.getElementById('detail-overall-stock');
+const detailVariantsList = document.getElementById('detail-variants-list');
+const detailQtyVal = document.getElementById('detail-qty-val');
+const detailQtyMinusBtn = document.getElementById('detail-qty-minus-btn');
+const detailQtyPlusBtn = document.getElementById('detail-qty-plus-btn');
+const detailAddToCartBtn = document.getElementById('detail-add-to-cart-btn');
+
+function openProductDetailModal(itemId) {
+  const item = menuItems.find(m => m.id === itemId);
+  if (!item) return;
+
+  selectedProductId = itemId;
+  selectedVariantName = null;
+  currentDetailQty = 1;
+
+  detailProductName.textContent = item.name;
+  detailProductImage.src = item.image || 'https://placehold.co/600x400/f1f5f9/94a3b8?text=Product';
+  detailProductPrice.textContent = item.price.toLocaleString();
+  detailQtyVal.textContent = '1';
+
+  detailQtyMinusBtn.disabled = true;
+  detailQtyPlusBtn.disabled = true;
+
+  if (item.hasVariants && Array.isArray(item.variants)) {
+    const totalStock = item.variants.reduce((sum, v) => sum + v.stock, 0);
+    detailOverallStock.textContent = `คงเหลือรวม: ${totalStock} ชิ้น`;
+    detailAddToCartBtn.disabled = true;
+
+    detailVariantsList.innerHTML = item.variants.map(v => {
+      const isOut = v.stock <= 0;
+      const classAttr = isOut ? 'variant-pill disabled' : 'variant-pill';
+      return `
+        <div class="${classAttr}" data-name="${v.name}" onclick="selectVariant(this, '${v.name}', ${v.stock})">
+          ${v.name} (${v.stock} ชิ้น)
+        </div>
+      `;
+    }).join('');
+    document.getElementById('detail-variants-container').style.display = 'block';
+  } else {
+    detailOverallStock.textContent = `คงเหลือ: ${item.stock} ชิ้น`;
+    detailVariantsList.innerHTML = '';
+    document.getElementById('detail-variants-container').style.display = 'none';
+    
+    selectedVariantName = null;
+    detailAddToCartBtn.disabled = item.stock <= 0;
+    if (item.stock > 0) {
+      detailQtyPlusBtn.disabled = false;
+    }
+  }
+
+  productDetailModal.classList.add('active');
+}
+
+function selectVariant(element, variantName, stock) {
+  if (element.classList.contains('disabled')) return;
+
+  const pills = detailVariantsList.querySelectorAll('.variant-pill');
+  pills.forEach(p => p.classList.remove('active'));
+
+  element.classList.add('active');
+  selectedVariantName = variantName;
+
+  currentDetailQty = 1;
+  detailQtyVal.textContent = '1';
+  updateDetailQtyControls(stock);
+
+  detailAddToCartBtn.disabled = false;
+}
+
+function updateDetailQtyControls(stock) {
+  detailQtyMinusBtn.disabled = currentDetailQty <= 1;
+  detailQtyPlusBtn.disabled = currentDetailQty >= stock;
+}
+
+if (closeDetailModalBtn) {
+  closeDetailModalBtn.addEventListener('click', () => {
+    productDetailModal.classList.remove('active');
+  });
+}
+
+if (detailQtyMinusBtn) {
+  detailQtyMinusBtn.addEventListener('click', () => {
+    if (currentDetailQty > 1) {
+      currentDetailQty--;
+      detailQtyVal.textContent = currentDetailQty;
+      
+      const item = menuItems.find(m => m.id === selectedProductId);
+      if (item && item.hasVariants) {
+        const v = item.variants.find(varObj => varObj.name === selectedVariantName);
+        if (v) updateDetailQtyControls(v.stock);
+      } else if (item) {
+        updateDetailQtyControls(item.stock);
+      }
+    }
+  });
+}
+
+if (detailQtyPlusBtn) {
+  detailQtyPlusBtn.addEventListener('click', () => {
+    const item = menuItems.find(m => m.id === selectedProductId);
+    let maxStock = 0;
+    if (item) {
+      if (item.hasVariants) {
+        const v = item.variants.find(varObj => varObj.name === selectedVariantName);
+        maxStock = v ? v.stock : 0;
+      } else {
+        maxStock = item.stock;
+      }
+    }
+
+    if (currentDetailQty < maxStock) {
+      currentDetailQty++;
+      detailQtyVal.textContent = currentDetailQty;
+      updateDetailQtyControls(maxStock);
+    }
+  });
+}
+
+if (detailAddToCartBtn) {
+  detailAddToCartBtn.addEventListener('click', () => {
+    if (!selectedProductId) return;
+
+    const cartKey = selectedVariantName ? `${selectedProductId}::${selectedVariantName}` : selectedProductId;
+    
+    if (cart[cartKey]) {
+      cart[cartKey] += currentDetailQty;
+    } else {
+      cart[cartKey] = currentDetailQty;
+    }
+
+    productDetailModal.classList.remove('active');
+    updateCartUI();
+    renderMenu(menuItems);
+    
+    if (window.innerWidth <= 900) {
+      cartPanel.classList.add('expanded');
+      cartChevron.className = "fa-solid fa-chevron-down";
+    }
+  });
+}
+
 function filterMenu() {
   const query = searchInput.value.trim().toLowerCase();
   if (!query) {
@@ -175,41 +348,45 @@ function filterMenu() {
   renderMenu(filtered);
 }
 
-// Add Item to Cart
 function addToCart(itemId) {
   const item = menuItems.find(i => i.id === itemId);
   if (!item || item.stock <= 0) return;
   
   cart[itemId] = 1;
   updateCartUI();
-  renderMenu(menuItems); // re-render item buttons
+  renderMenu(menuItems);
 }
 
-// Update Cart Quantity
-function updateCartQty(itemId, change) {
+function updateCartQty(cartKey, change) {
+  const [itemId, variantName] = cartKey.split('::');
   const item = menuItems.find(i => i.id === itemId);
   if (!item) return;
 
-  const currentQty = cart[itemId] || 0;
+  let maxStock = item.stock;
+  if (item.hasVariants && Array.isArray(item.variants)) {
+    const v = item.variants.find(varObj => varObj.name === variantName);
+    maxStock = v ? v.stock : 0;
+  }
+
+  const currentQty = cart[cartKey] || 0;
   const newQty = currentQty + change;
 
   if (newQty <= 0) {
-    delete cart[itemId];
-  } else if (newQty <= item.stock) {
-    cart[itemId] = newQty;
+    delete cart[cartKey];
+  } else if (newQty <= maxStock) {
+    cart[cartKey] = newQty;
   } else {
-    alert(`ขออภัย สามารถสั่งซื้อ ${item.name} ได้สูงสุด ${item.stock} ชิ้น`);
+    alert(`ขออภัย สามารถสั่งซื้อ ${item.name} ${variantName ? '(' + variantName + ')' : ''} ได้สูงสุด ${maxStock} ชิ้น`);
   }
 
   updateCartUI();
   renderMenu(menuItems);
 }
 
-// Update Cart Panel UI
 function updateCartUI() {
-  const cartItemIds = Object.keys(cart);
+  const cartKeys = Object.keys(cart);
   
-  if (cartItemIds.length === 0) {
+  if (cartKeys.length === 0) {
     emptyCartMessage.style.display = 'block';
     cartItemsContainer.innerHTML = '';
     cartCount.textContent = '0';
@@ -224,24 +401,33 @@ function updateCartUI() {
   let totalItemsCount = 0;
   let totalPrice = 0;
 
-  cartItemsContainer.innerHTML = cartItemIds.map(itemId => {
+  cartItemsContainer.innerHTML = cartKeys.map(key => {
+    const [itemId, variantName] = key.split('::');
     const item = menuItems.find(i => i.id === itemId);
     if (!item) return '';
 
-    const qty = cart[itemId];
+    const qty = cart[key];
     totalItemsCount += qty;
     totalPrice += item.price * qty;
+
+    const displayName = variantName ? `${item.name} (${variantName})` : item.name;
+    
+    let maxStock = item.stock;
+    if (item.hasVariants && Array.isArray(item.variants)) {
+      const v = item.variants.find(varObj => varObj.name === variantName);
+      maxStock = v ? v.stock : 0;
+    }
 
     return `
       <div class="cart-item">
         <div class="cart-item-details">
-          <div class="cart-item-name">${item.name}</div>
+          <div class="cart-item-name">${displayName}</div>
           <div class="cart-item-price">฿${item.price.toLocaleString()} x ${qty}</div>
         </div>
         <div class="quantity-control">
-          <button class="qty-btn" onclick="updateCartQty('${itemId}', -1)">-</button>
+          <button class="qty-btn" onclick="updateCartQty('${key}', -1)">-</button>
           <span class="qty-val">${qty}</span>
-          <button class="qty-btn" onclick="updateCartQty('${itemId}', 1)" ${qty >= item.stock ? 'disabled' : ''}>+</button>
+          <button class="qty-btn" onclick="updateCartQty('${key}', 1)" ${qty >= maxStock ? 'disabled' : ''}>+</button>
         </div>
       </div>
     `;
@@ -251,18 +437,21 @@ function updateCartUI() {
   cartTotalVal.textContent = totalPrice.toLocaleString();
 }
 
-// Submit Order (Customer places order)
 async function submitOrder() {
-  const cartItemIds = Object.keys(cart);
-  if (cartItemIds.length === 0) return;
+  const cartKeys = Object.keys(cart);
+  if (cartKeys.length === 0) return;
 
   submitOrderBtn.disabled = true;
-  submitOrderBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังส่งออเดอร์...`;
+  submitOrderBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังส่งคำสั่งซื้อ...`;
 
-  const orderItems = cartItemIds.map(id => ({
-    id,
-    quantity: cart[id]
-  }));
+  const orderItems = cartKeys.map(key => {
+    const [itemId, variantName] = key.split('::');
+    return {
+      id: itemId,
+      quantity: cart[key],
+      variant: variantName || ''
+    };
+  });
 
   try {
     const response = await fetch('/api/orders', {
@@ -280,31 +469,8 @@ async function submitOrder() {
       throw new Error(result.error || 'Failed to place order');
     }
 
-    // Reset Cart
     cart = {};
     updateCartUI();
-    
-    // Save to LocalStorage
-    localStorage.setItem('lastOrderId', result.id);
-    checkExistingOrder();
-    
-    // Refresh Menu to update stocks
-    await fetchMenu();
-
-    // Show banner
-    showNotification('ส่งรายการสั่งซื้อของคุณเสร็จสิ้น! สามารถติดตามความคืบหน้าได้ที่ปุ่ม "ติดตามออเดอร์"');
-
-    // Close mobile cart panel if open
-    cartPanel.classList.remove('expanded');
-    cartChevron.className = "fa-solid fa-chevron-up";
-
-  } catch (error) {
-    console.error('Submit order error:', error);
-    alert(`เกิดข้อผิดพลาดในการสั่งซื้อ: ${error.message}`);
-    submitOrderBtn.disabled = false;
-    submitOrderBtn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> ยืนยันการสั่งซื้อ`;
-  }
-}
 
 // Show Notification Banner
 function showNotification(msg) {
@@ -421,7 +587,7 @@ function renderOrderStatusDetails(order) {
   // Generate Items lines
   const itemsHtml = order.items.map(item => `
     <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.95rem;">
-      <span>${item.name} x ${item.quantity}</span>
+      <span>${item.name}${item.variant ? ' (' + item.variant + ')' : ''} x ${item.quantity}</span>
       <span>฿${(item.price * item.quantity).toLocaleString()}</span>
     </div>
   `).join('');
