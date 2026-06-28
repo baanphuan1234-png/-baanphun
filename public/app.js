@@ -454,12 +454,16 @@ async function submitOrder() {
   });
 
   try {
+    const paymentMethodInput = document.querySelector('input[name="payment-method"]:checked');
+    const paymentMethod = paymentMethodInput ? paymentMethodInput.value : 'โอนเงิน';
+
     const response = await fetch('/api/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         items: orderItems,
-        table: tableNumber
+        table: tableNumber,
+        paymentMethod: paymentMethod
       })
     });
 
@@ -617,11 +621,14 @@ function renderOrderStatusDetails(order) {
     </div>
   `).join('');
 
+  const step2Title = order.paymentMethod === 'เงินสด' ? 'เตรียมจ่ายสด' : 'ชำระเงิน';
+
   orderStatusContent.innerHTML = `
     <div style="text-align: center; margin-bottom: 1.5rem;">
       <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">รหัสออเดอร์: ${order.id}</div>
       <div style="font-size: 1.5rem; font-weight: 700; color: ${statusColor};">${statusText}</div>
       <div style="font-size: 1rem; font-weight: 600; color: ${paymentColor}; margin-top: 0.25rem;">สถานะชำระเงิน: ${paymentText}</div>
+      <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-top: 0.35rem;"><i class="fa-solid fa-credit-card"></i> ช่องทางชำระเงิน: ${order.paymentMethod || 'โอนเงิน'}</div>
     </div>
 
     <!-- Stepper indicator -->
@@ -635,7 +642,7 @@ function renderOrderStatusDetails(order) {
       
       <div style="text-align: center; z-index: 2;">
         <div style="width: 32px; height: 32px; border-radius: 50%; background-color: ${stepIndex >= 2 ? 'var(--primary)' : (order.paymentStatus === 'paid' ? 'var(--success)' : 'var(--bg-input)')}; color: ${stepIndex >= 2 || order.paymentStatus === 'paid' ? 'white' : 'var(--text-muted)'}; display: flex; align-items: center; justify-content: center; font-weight: bold; margin: 0 auto 0.5rem auto;">2</div>
-        <div style="font-size: 0.75rem; font-weight: 500;">ชำระเงิน</div>
+        <div style="font-size: 0.75rem; font-weight: 500;">${step2Title}</div>
       </div>
 
       <div style="text-align: center; z-index: 2;">
@@ -661,29 +668,37 @@ function renderOrderStatusDetails(order) {
     ` : ''}
 
     ${order.status !== 'cancelled' && order.paymentStatus === 'unpaid' ? `
-      <div id="order-qr-container" style="text-align: center; margin-top: 1rem; display: none;"></div>
-      
-      ${order.slipImage ? `
-        <div style="text-align: center; margin-top: 1rem; border: 1.5px solid var(--border-color); padding: 1.25rem; border-radius: var(--radius-lg); background: var(--bg-input);">
-          <div style="font-weight: 600; font-size: 0.95rem; color: var(--success); margin-bottom: 0.75rem;"><i class="fa-solid fa-circle-check"></i> ส่งสลิปโอนเงินแล้ว</div>
-          <img src="${order.slipImage}" style="max-width: 100%; max-height: 220px; object-fit: contain; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 0.75rem; box-shadow: var(--shadow-sm);" onerror="this.onerror=null; this.src='https://placehold.co/200x200/f1f5f9/94a3b8?text=SlipNotFound';">
-          <div class="slip-upload-wrapper">
-            <label for="slip-file-input" class="btn btn-outline btn-sm slip-label" style="cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; font-size: 0.8rem;">
-              <i class="fa-solid fa-cloud-arrow-up"></i> เปลี่ยนสลิปใหม่
+      ${order.paymentMethod === 'เงินสด' ? `
+        <div class="alert-box alert-success text-center" style="margin-top: 1rem; flex-direction: column; gap: 0.5rem; background-color: rgba(34, 197, 94, 0.08); border-color: rgba(34, 197, 94, 0.3); color: var(--text-main); padding: 1.25rem;">
+          <div style="font-size: 1.5rem;"><i class="fa-solid fa-money-bill-wave" style="color: var(--success);"></i></div>
+          <div style="font-weight: 700; font-size: 1.05rem;">ชำระเงินด้วยเงินสดที่ร้าน</div>
+          <div style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">กรุณาเตรียมชำระเงินสดจำนวน <strong style="color: var(--text-main); font-size: 1rem;">฿${order.total.toLocaleString()}</strong> ที่จุดบริการ หรือรอเจ้าหน้าที่มาเก็บเงินครับ</div>
+        </div>
+      ` : `
+        <div id="order-qr-container" style="text-align: center; margin-top: 1rem; display: none;"></div>
+        
+        ${order.slipImage ? `
+          <div style="text-align: center; margin-top: 1rem; border: 1.5px solid var(--border-color); padding: 1.25rem; border-radius: var(--radius-lg); background: var(--bg-input);">
+            <div style="font-weight: 600; font-size: 0.95rem; color: var(--success); margin-bottom: 0.75rem;"><i class="fa-solid fa-circle-check"></i> ส่งสลิปโอนเงินแล้ว</div>
+            <img src="${order.slipImage}" style="max-width: 100%; max-height: 220px; object-fit: contain; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 0.75rem; box-shadow: var(--shadow-sm);" onerror="this.onerror=null; this.src='https://placehold.co/200x200/f1f5f9/94a3b8?text=SlipNotFound';">
+            <div class="slip-upload-wrapper">
+              <label for="slip-file-input" class="btn btn-outline btn-sm slip-label" style="cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; font-size: 0.8rem;">
+                <i class="fa-solid fa-cloud-arrow-up"></i> เปลี่ยนสลิปใหม่
+              </label>
+              <input type="file" id="slip-file-input" accept="image/*" style="display: none;" onchange="uploadPaymentSlip(event, '${order.id}')">
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem; font-weight: 500;">สถานะ: รอแอดมินยืนยันยอดเงิน</div>
+          </div>
+        ` : `
+          <div class="slip-upload-wrapper" style="text-align: center; margin-top: 1rem; border: 2px dashed var(--border-color); padding: 1.5rem; border-radius: var(--radius-lg); background-color: var(--bg-card); cursor: pointer; transition: border-color var(--transition);">
+            <label for="slip-file-input" class="slip-label" style="cursor: pointer; display: block; width: 100%;">
+              <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2.25rem; color: var(--primary); margin-bottom: 0.5rem;"></i>
+              <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-main);">อัปโหลดสลิปเพื่อยืนยันเงินโอน</div>
+              <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">เมื่อโอนเงินแล้วกรุณาแนบภาพสลิปที่นี่</div>
             </label>
             <input type="file" id="slip-file-input" accept="image/*" style="display: none;" onchange="uploadPaymentSlip(event, '${order.id}')">
           </div>
-          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem; font-weight: 500;">สถานะ: รอแอดมินยืนยันยอดเงิน</div>
-        </div>
-      ` : `
-        <div class="slip-upload-wrapper" style="text-align: center; margin-top: 1rem; border: 2px dashed var(--border-color); padding: 1.5rem; border-radius: var(--radius-lg); background-color: var(--bg-card); cursor: pointer; transition: border-color var(--transition);">
-          <label for="slip-file-input" class="slip-label" style="cursor: pointer; display: block; width: 100%;">
-            <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2.25rem; color: var(--primary); margin-bottom: 0.5rem;"></i>
-            <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-main);">อัปโหลดสลิปเพื่อยืนยันเงินโอน</div>
-            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">เมื่อโอนเงินแล้วกรุณาแนบภาพสลิปที่นี่</div>
-          </label>
-          <input type="file" id="slip-file-input" accept="image/*" style="display: none;" onchange="uploadPaymentSlip(event, '${order.id}')">
-        </div>
+        `}
       `}
     ` : ''}
 
@@ -697,7 +712,7 @@ function renderOrderStatusDetails(order) {
     `}
   `;
 
-  if (order.paymentStatus === 'unpaid' && order.status !== 'cancelled') {
+  if (order.paymentStatus === 'unpaid' && order.status !== 'cancelled' && order.paymentMethod !== 'เงินสด') {
     setTimeout(() => loadOrderPaymentQR(order.id, order.total), 50);
   }
 }
@@ -806,4 +821,23 @@ window.clearSavedOrder = function() {
   orderStatusModal.classList.remove('active');
   checkExistingOrder();
   alert('คุณสามารถเลือกเมนูใหม่และส่งออเดอร์ถัดไปได้แล้วครับ');
+};
+
+// Change payment method selection styles in cart UI
+window.changePaymentMethodUI = function(method) {
+  const transferLabel = document.getElementById('pay-method-transfer-label');
+  const cashLabel = document.getElementById('pay-method-cash-label');
+  if (!transferLabel || !cashLabel) return;
+  
+  if (method === 'โอนเงิน') {
+    transferLabel.style.backgroundColor = 'var(--bg-input)';
+    transferLabel.style.borderColor = 'var(--primary)';
+    cashLabel.style.backgroundColor = 'var(--bg-card)';
+    cashLabel.style.borderColor = 'var(--border-color)';
+  } else {
+    cashLabel.style.backgroundColor = 'var(--bg-input)';
+    cashLabel.style.borderColor = 'var(--success)';
+    transferLabel.style.backgroundColor = 'var(--bg-card)';
+    transferLabel.style.borderColor = 'var(--border-color)';
+  }
 };

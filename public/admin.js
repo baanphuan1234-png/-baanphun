@@ -104,7 +104,7 @@ function doGet(e) {
   }
   
   if (action === "getOrders") {
-    var sheet = getOrCreateSheet(ss, SHEET_NAME_ORDERS, ["id", "timestamp", "items", "total", "status", "paymentStatus", "table", "slipImage"]);
+    var sheet = getOrCreateSheet(ss, SHEET_NAME_ORDERS, ["id", "timestamp", "items", "total", "status", "paymentStatus", "table", "paymentMethod", "slipImage"]);
     var data = getSheetData(sheet);
     data.forEach(function(row) {
       try {
@@ -141,18 +141,18 @@ function doPost(e) {
   }
   
   if (action === "saveOrdersList") {
-    var sheet = getOrCreateSheet(ss, SHEET_NAME_ORDERS, ["id", "timestamp", "items", "total", "status", "paymentStatus", "table", "slipImage"]);
+    var sheet = getOrCreateSheet(ss, SHEET_NAME_ORDERS, ["id", "timestamp", "items", "total", "status", "paymentStatus", "table", "paymentMethod", "slipImage"]);
     clearSheetData(sheet);
     var ordersList = postData.data || [];
     ordersList.forEach(function(order) {
       var itemsStr = JSON.stringify(order.items);
-      sheet.appendRow([order.id, order.timestamp, itemsStr, order.total, order.status, order.paymentStatus, order.table || "ทั่วไป", order.slipImage || ""]);
+      sheet.appendRow([order.id, order.timestamp, itemsStr, order.total, order.status, order.paymentStatus, order.table || "ทั่วไป", order.paymentMethod || "โอนเงิน", order.slipImage || ""]);
     });
     return jsonResponse({ success: true });
   }
   
   if (action === "saveOrder") {
-    var sheet = getOrCreateSheet(ss, SHEET_NAME_ORDERS, ["id", "timestamp", "items", "total", "status", "paymentStatus", "table", "slipImage"]);
+    var sheet = getOrCreateSheet(ss, SHEET_NAME_ORDERS, ["id", "timestamp", "items", "total", "status", "paymentStatus", "table", "paymentMethod", "slipImage"]);
     var order = postData.data;
     
     var rows = sheet.getDataRange().getValues();
@@ -165,7 +165,7 @@ function doPost(e) {
     }
     
     var itemsStr = JSON.stringify(order.items);
-    var rowData = [order.id, order.timestamp, itemsStr, order.total, order.status, order.paymentStatus, order.table || "ทั่วไป", order.slipImage || ""];
+    var rowData = [order.id, order.timestamp, itemsStr, order.total, order.status, order.paymentStatus, order.table || "ทั่วไป", order.paymentMethod || "โอนเงิน", order.slipImage || ""];
     
     if (foundIndex !== -1) {
       var range = sheet.getRange(foundIndex, 1, 1, rowData.length);
@@ -812,12 +812,17 @@ function renderOrdersBoard(ordersList) {
       `;
     }
 
+    const payMethodBadge = order.paymentMethod === 'เงินสด' 
+      ? `<span style="display: inline-block; padding: 0.15rem 0.4rem; border-radius: var(--radius-sm); font-size: 0.7rem; font-weight: 600; background-color: rgba(34, 197, 94, 0.15); color: #22c55e; margin-top: 0.25rem;"><i class="fa-solid fa-money-bill-wave"></i> เงินสด</span>`
+      : `<span style="display: inline-block; padding: 0.15rem 0.4rem; border-radius: var(--radius-sm); font-size: 0.7rem; font-weight: 600; background-color: rgba(59, 130, 246, 0.15); color: #3b82f6; margin-top: 0.25rem;"><i class="fa-solid fa-qrcode"></i> โอนเงิน</span>`;
+
     return `
       <div class="order-card" style="${borderStyle}">
         <div class="order-card-header">
           <div>
             <div class="order-id">รหัส: ${order.id.slice(-6)}</div>
             <div class="order-time">${formattedTime} น. | จุดบริการ: <strong>${order.table || 'ทั่วไป'}</strong></div>
+            ${payMethodBadge}
           </div>
           <span class="order-status-badge status-${order.status}">${order.status === 'pending' ? 'รอดำเนินการ' : 'ส่งมอบสำเร็จ'}</span>
         </div>
@@ -1091,7 +1096,7 @@ function renderStats() {
         <tr>
           <td style="font-size:0.85rem;">${formattedDateTime}</td>
           <td><code style="font-size:0.8rem;">${order.id.slice(-6).toUpperCase()}</code></td>
-          <td><strong>${order.table || 'ทั่วไป'}</strong></td>
+          <td><strong>${order.table || 'ทั่วไป'}</strong><br><span style="font-size:0.75rem; color:var(--text-muted);">${order.paymentMethod || 'โอนเงิน'}</span></td>
           <td style="font-size:0.85rem; text-align:left;">${itemsListHtml}</td>
           <td><strong>฿${(parseFloat(order.total) || 0).toLocaleString()}</strong></td>
           <td>${paymentStatusBadge}</td>

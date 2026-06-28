@@ -79,6 +79,21 @@
             <span>ราคารวมทั้งหมด:</span>
             <span>฿<span id="cart-total-val">0</span></span>
           </div>
+          
+          <div class="payment-method-selection" style="margin-top: 0.75rem; margin-bottom: 0.75rem; border-top: 1px dashed var(--border-color); padding-top: 0.75rem;">
+            <label style="display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem; text-align: left; color: var(--text-main);">ช่องทางการชำระเงิน:</label>
+            <div style="display: flex; gap: 0.5rem; width: 100%;">
+              <label style="flex: 1; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.5rem; text-align: center; cursor: pointer; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 0.25rem; background-color: var(--bg-input); transition: var(--transition); border-color: var(--primary);" id="pay-method-transfer-label">
+                <input type="radio" name="payment-method" value="โอนเงิน" checked style="width: auto; margin: 0 0.25rem 0 0;" onchange="changePaymentMethodUI('โอนเงิน')">
+                <span>โอนเงิน</span>
+              </label>
+              <label style="flex: 1; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.5rem; text-align: center; cursor: pointer; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 0.25rem; background-color: var(--bg-card); transition: var(--transition);" id="pay-method-cash-label">
+                <input type="radio" name="payment-method" value="เงินสด" style="width: auto; margin: 0 0.25rem 0 0;" onchange="changePaymentMethodUI('เงินสด')">
+                <span>เงินสด</span>
+              </label>
+            </div>
+          </div>
+
           <button class="btn btn-primary btn-lg" id="submit-order-btn" style="width: 100%;" disabled>
             <i class="fa-solid fa-paper-plane"></i> ยืนยันการสั่งซื้อ
           </button>
