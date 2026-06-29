@@ -16,7 +16,8 @@ const supabaseKey = process.env.SUPABASE_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
 if (!supabase) {
-  console.warn("⚠️ Supabase credentials missing. Falling back to Local JSON database.");
+  console.error("❌ ERROR: Supabase credentials (SUPABASE_URL / SUPABASE_KEY) are missing in environment variables.");
+  process.exit(1); // Stop execution as Supabase is mandatory now
 } else {
   console.log("⚡ Supabase Client initialized successfully.");
 }
@@ -26,181 +27,40 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Ensure directories exist
-const DATA_DIR = path.join(__dirname, 'data');
+// Ensure uploads directory exists (local fallback for upload temporary caching)
 const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
-
 try {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR);
-  }
   if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
 } catch (err) {
-  console.warn("Unable to create directories on startup (likely read-only Vercel environment):", err.message);
+  console.warn("Unable to create uploads directory on startup (read-only environment):", err.message);
 }
 
-// Database paths
-const MENU_PATH = path.join(DATA_DIR, 'menu.json');
-const ORDERS_PATH = path.join(DATA_DIR, 'orders.json');
-const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
+let inMemoryUploads = {}; // filename -> { buffer, mimeType } (Vercel Serverless in-memory upload cache)
 
-// In-memory fallbacks (essential for Vercel Serverless read-only filesystem)
-let inMemoryMenu = [];
-let inMemoryOrders = [];
-let inMemorySettings = { promptPayId: '', googleSheetsUrl: '' };
-let inMemoryUploads = {}; // filename -> { buffer, mimeType }
-
-// Memory cache for API responses to boost speed
-const cache = {
-  menu: { data: null, timestamp: 0 },
-  orders: { data: null, timestamp: 0 }
-};
-const CACHE_DURATION_MENU = 60000; // 60 seconds cache
-const CACHE_DURATION_ORDERS = 30000; // 30 seconds cache
-
-// Try to initialize files locally if writeable
-try {
-  if (!fs.existsSync(MENU_PATH)) fs.writeFileSync(MENU_PATH, JSON.stringify([]));
-  if (!fs.existsSync(ORDERS_PATH)) fs.writeFileSync(ORDERS_PATH, JSON.stringify([]));
-  if (!fs.existsSync(SETTINGS_PATH)) fs.writeFileSync(SETTINGS_PATH, JSON.stringify({ promptPayId: '', googleSheetsUrl: '' }));
-} catch (err) {
-  console.warn("Unable to initialize local JSON files (likely read-only Vercel environment):", err.message);
-}
-
-// Helper functions for reading/writing local files with Vercel in-memory fallback
-const readLocal = (filePath) => {
+// Helper to fetch settings from Supabase
+async function getSettings() {
   try {
-    if (filePath === MENU_PATH && inMemoryMenu.length > 0) return inMemoryMenu;
-    if (filePath === ORDERS_PATH && inMemoryOrders.length > 0) return inMemoryOrders;
-    if (filePath === SETTINGS_PATH && inMemorySettings.promptPayId) {
+    const { data, error } = await supabase.from('settings').select('*').eq('id', 1).single();
+    if (!error && data) {
       return {
-        promptPayId: inMemorySettings.promptPayId || process.env.PROMPTPAY_ID || '',
-        googleSheetsUrl: inMemorySettings.googleSheetsUrl || process.env.GOOGLE_SHEETS_URL || ''
+        promptPayId: data.prompt_pay_id || '',
+        googleSheetsUrl: data.google_sheets_url || ''
       };
     }
-
-    if (!fs.existsSync(filePath)) {
-      if (filePath === SETTINGS_PATH) {
-        return {
-          promptPayId: process.env.PROMPTPAY_ID || '',
-          googleSheetsUrl: process.env.GOOGLE_SHEETS_URL || ''
-        };
-      }
-      return [];
-    }
-    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    if (filePath === SETTINGS_PATH) {
-      return {
-        promptPayId: data.promptPayId || process.env.PROMPTPAY_ID || '',
-        googleSheetsUrl: data.googleSheetsUrl || process.env.GOOGLE_SHEETS_URL || ''
-      };
-    }
-    return data;
-  } catch (err) {
-    console.error(`Error reading ${filePath}:`, err);
-    if (filePath === MENU_PATH) return inMemoryMenu;
-    if (filePath === ORDERS_PATH) return inMemoryOrders;
-    if (filePath === SETTINGS_PATH) {
-      return {
-        promptPayId: inMemorySettings.promptPayId || process.env.PROMPTPAY_ID || '',
-        googleSheetsUrl: inMemorySettings.googleSheetsUrl || process.env.GOOGLE_SHEETS_URL || ''
-      };
-    }
-    return [];
+  } catch (e) {
+    console.error("Failed to read settings from Supabase:", e.message);
   }
-};
-
-const writeLocal = (filePath, data) => {
-  // Always update the in-memory cache
-  if (filePath === MENU_PATH) inMemoryMenu = data;
-  if (filePath === ORDERS_PATH) inMemoryOrders = data;
-  if (filePath === SETTINGS_PATH) inMemorySettings = data;
-
-  try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
-  } catch (err) {
-    console.warn(`Disk write failed for ${filePath} (falling back to memory):`, err.message);
-  }
-};
-
-// Database getters that read from Supabase with local fallback
-async function getSettingsFromDb() {
-  try {
-    if (supabase) {
-      const { data, error } = await supabase.from('settings').select('*').eq('id', 1).single();
-      if (!error && data) {
-        const settings = {
-          promptPayId: data.prompt_pay_id || '',
-          googleSheetsUrl: data.google_sheets_url || ''
-        };
-        // Update local backup
-        writeLocal(SETTINGS_PATH, settings);
-        return settings;
-      }
-    }
-  } catch (err) {
-    console.error("Failed to fetch settings from Supabase:", err.message);
-  }
-  return readLocal(SETTINGS_PATH);
-}
-
-async function getMenuFromDb() {
-  try {
-    if (supabase) {
-      const { data, error } = await supabase.from('menu').select('*').order('created_at', { ascending: true });
-      if (!error && data) {
-        const formatted = data.map(item => ({
-          id: item.id,
-          name: item.name,
-          price: parseFloat(item.price) || 0,
-          stock: parseInt(item.stock) || 0,
-          image: item.image || '',
-          hasVariants: item.has_variants,
-          variants: item.variants || []
-        }));
-        // Update local backup
-        writeLocal(MENU_PATH, formatted);
-        return formatted;
-      }
-    }
-  } catch (err) {
-    console.error("Failed to fetch menu from Supabase:", err.message);
-  }
-  return readLocal(MENU_PATH);
-}
-
-async function getOrdersFromDb() {
-  try {
-    if (supabase) {
-      const { data, error } = await supabase.from('orders').select('*').order('timestamp', { ascending: false });
-      if (!error && data) {
-        const formatted = data.map(order => ({
-          id: order.id,
-          timestamp: order.timestamp,
-          items: order.items,
-          total: parseFloat(order.total) || 0,
-          status: order.status,
-          paymentStatus: order.payment_status,
-          paymentMethod: order.payment_method,
-          table: order.table,
-          slipImage: order.slip_image || ''
-        }));
-        // Update local backup
-        writeLocal(ORDERS_PATH, formatted);
-        return formatted;
-      }
-    }
-  } catch (err) {
-    console.error("Failed to fetch orders from Supabase:", err.message);
-  }
-  return readLocal(ORDERS_PATH);
+  return {
+    promptPayId: process.env.PROMPTPAY_ID || '',
+    googleSheetsUrl: process.env.GOOGLE_SHEETS_URL || ''
+  };
 }
 
 // Helper function to call Google Sheet Apps Script API
 async function syncWithGoogleSheets(action, payload = null) {
-  const settings = await getSettingsFromDb();
+  const settings = await getSettings();
   if (!settings.googleSheetsUrl) return null;
 
   try {
@@ -220,7 +80,7 @@ async function syncWithGoogleSheets(action, payload = null) {
     }
   } catch (err) {
     console.error(`Google Sheets Sync Error [Action: ${action}]:`, err.message);
-    return null; // Return null so caller knows it failed and can fallback
+    return null;
   }
 }
 
@@ -239,450 +99,247 @@ app.post('/api/login', (req, res) => {
   }
 });
 
-// Settings
+// Settings GET
 app.get('/api/settings', async (req, res) => {
-  const settings = await getSettingsFromDb();
+  const settings = await getSettings();
   res.json(settings);
 });
 
+// Settings POST
 app.post('/api/settings', async (req, res) => {
   const { promptPayId, googleSheetsUrl } = req.body;
-  const settings = {
-    promptPayId: promptPayId || process.env.PROMPTPAY_ID || '',
-    googleSheetsUrl: googleSheetsUrl || process.env.GOOGLE_SHEETS_URL || ''
-  };
-  
-  writeLocal(SETTINGS_PATH, settings);
-  
   try {
-    if (supabase) {
-      await supabase.from('settings').upsert({
-        id: 1,
-        prompt_pay_id: settings.promptPayId,
-        google_sheets_url: settings.googleSheetsUrl
-      });
-    }
+    const { data, error } = await supabase.from('settings').upsert({
+      id: 1,
+      prompt_pay_id: promptPayId || '',
+      google_sheets_url: googleSheetsUrl || ''
+    }).select().single();
+    
+    if (error) throw error;
+    
+    res.json({
+      success: true,
+      settings: {
+        promptPayId: data.prompt_pay_id,
+        googleSheetsUrl: data.google_sheets_url
+      }
+    });
   } catch (err) {
-    console.error("Failed to save settings to Supabase:", err.message);
+    res.status(500).json({ error: 'บันทึกการตั้งค่าล้มเหลว: ' + err.message });
   }
-  
-  res.json({ success: true, settings });
 });
 
-// Menu Items (Read, Create, Update, Delete)
+// Menu Items GET
 app.get('/api/menu', async (req, res) => {
-  const localMenu = readLocal(MENU_PATH);
-  res.json(localMenu); // Respond instantly with local data (SWR)
-
-  const now = Date.now();
-  if (!cache.menu.data || (now - cache.menu.timestamp >= CACHE_DURATION_MENU)) {
-    getMenuFromDb().then(dbMenu => {
-      cache.menu = { data: dbMenu, timestamp: Date.now() };
-      
-      // Secondary background sync with sheets
-      syncWithGoogleSheets('getMenu').then(sheetMenu => {
-        if (sheetMenu && Array.isArray(sheetMenu)) {
-          // Sheets can keep local in sync as secondary backup
-          const formattedMenu = sheetMenu.map(item => ({
-            id: String(item.id),
-            name: String(item.name),
-            price: parseFloat(item.price) || 0,
-            stock: parseInt(item.stock) || 0,
-            image: String(item.image || ''),
-            hasVariants: item.hasVariants === 'true' || item.hasVariants === true,
-            variants: item.variants ? (typeof item.variants === 'string' ? JSON.parse(item.variants) : item.variants) : []
-          }));
-          writeLocal(MENU_PATH, formattedMenu);
-          
-          if (supabase) {
-            // Bulk sync menu from sheet to Supabase if wanted
-            formattedMenu.forEach(async (m) => {
-              await supabase.from('menu').upsert({
-                id: m.id,
-                name: m.name,
-                price: m.price,
-                stock: m.stock,
-                image: m.image,
-                has_variants: m.hasVariants,
-                variants: m.variants
-              });
-            });
-          }
-        }
-      }).catch(() => {});
-    }).catch(() => {});
+  try {
+    const { data, error } = await supabase.from('menu').select('*').order('created_at', { ascending: true });
+    if (error) throw error;
+    
+    const formatted = data.map(item => ({
+      id: item.id,
+      name: item.name,
+      price: parseFloat(item.price) || 0,
+      stock: parseInt(item.stock) || 0,
+      image: item.image || '',
+      hasVariants: item.has_variants,
+      variants: item.variants || []
+    }));
+    res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ error: 'ดึงข้อมูลเมนูล้มเหลว: ' + err.message });
   }
 });
 
+// Menu Item POST
 app.post('/api/menu', async (req, res) => {
   const { name, price, stock, image, hasVariants, variants } = req.body;
-  const menu = await getMenuFromDb();
-  
   const newItem = {
     id: 'item_' + Date.now(),
     name: name || 'Unnamed Item',
     price: parseFloat(price) || 0,
     stock: parseInt(stock) || 0,
     image: image || '',
-    hasVariants: !!hasVariants,
+    has_variants: !!hasVariants,
     variants: Array.isArray(variants) ? variants : []
   };
-  
-  menu.push(newItem);
-  writeLocal(MENU_PATH, menu);
-  
-  // Invalidate cache
-  cache.menu.timestamp = 0;
-  
-  // Save to Supabase
+
   try {
-    if (supabase) {
-      await supabase.from('menu').insert({
-        id: newItem.id,
-        name: newItem.name,
-        price: newItem.price,
-        stock: newItem.stock,
-        image: newItem.image,
-        has_variants: newItem.hasVariants,
-        variants: newItem.variants
-      });
-    }
+    const { error } = await supabase.from('menu').insert(newItem);
+    if (error) throw error;
+
+    const responseItem = {
+      id: newItem.id,
+      name: newItem.name,
+      price: newItem.price,
+      stock: newItem.stock,
+      image: newItem.image,
+      hasVariants: newItem.has_variants,
+      variants: newItem.variants
+    };
+
+    // Google Sheets Sync in background
+    syncMenuToSheets().catch(() => {});
+
+    res.json(responseItem);
   } catch (err) {
-    console.error("Failed to insert menu item in Supabase:", err.message);
+    res.status(500).json({ error: 'เพิ่มรายการเมนูล้มเหลว: ' + err.message });
   }
-  
-  // Sync to Google Sheets in background
-  syncWithGoogleSheets('saveMenu', { data: menu }).catch(err => 
-    console.error("Google Sheets Background Sync Error (saveMenu):", err)
-  );
-  
-  res.json(newItem);
 });
 
+// Menu Item PUT
 app.put('/api/menu/:id', async (req, res) => {
   const { id } = req.params;
   const { name, price, stock, image, hasVariants, variants } = req.body;
-  const menu = await getMenuFromDb();
-  
-  const itemIndex = menu.findIndex(item => item.id === id);
-  if (itemIndex === -1) {
-    return res.status(404).json({ error: 'Item not found' });
-  }
-  
-  menu[itemIndex] = {
-    ...menu[itemIndex],
-    name: name !== undefined ? name : menu[itemIndex].name,
-    price: price !== undefined ? parseFloat(price) : menu[itemIndex].price,
-    stock: stock !== undefined ? parseInt(stock) : menu[itemIndex].stock,
-    image: image !== undefined ? image : menu[itemIndex].image,
-    hasVariants: hasVariants !== undefined ? !!hasVariants : menu[itemIndex].hasVariants,
-    variants: variants !== undefined ? (Array.isArray(variants) ? variants : []) : menu[itemIndex].variants
-  };
-  
-  writeLocal(MENU_PATH, menu);
-  
-  // Invalidate cache
-  cache.menu.timestamp = 0;
-  
-  // Save to Supabase
+
+  const updateObj = {};
+  if (name !== undefined) updateObj.name = name;
+  if (price !== undefined) updateObj.price = parseFloat(price);
+  if (stock !== undefined) updateObj.stock = parseInt(stock);
+  if (image !== undefined) updateObj.image = image;
+  if (hasVariants !== undefined) updateObj.has_variants = !!hasVariants;
+  if (variants !== undefined) updateObj.variants = Array.isArray(variants) ? variants : [];
+
   try {
-    if (supabase) {
-      await supabase.from('menu').update({
-        name: menu[itemIndex].name,
-        price: menu[itemIndex].price,
-        stock: menu[itemIndex].stock,
-        image: menu[itemIndex].image,
-        has_variants: menu[itemIndex].hasVariants,
-        variants: menu[itemIndex].variants
-      }).eq('id', id);
-    }
+    const { data, error } = await supabase.from('menu').update(updateObj).eq('id', id).select().single();
+    if (error) throw error;
+
+    const responseItem = {
+      id: data.id,
+      name: data.name,
+      price: parseFloat(data.price) || 0,
+      stock: parseInt(data.stock) || 0,
+      image: data.image || '',
+      hasVariants: data.has_variants,
+      variants: data.variants || []
+    };
+
+    // Google Sheets Sync in background
+    syncMenuToSheets().catch(() => {});
+
+    res.json(responseItem);
   } catch (err) {
-    console.error("Failed to update menu item in Supabase:", err.message);
+    res.status(500).json({ error: 'แก้ไขรายการเมนูล้มเหลว: ' + err.message });
   }
-  
-  // Sync to Google Sheets in background
-  syncWithGoogleSheets('saveMenu', { data: menu }).catch(err => 
-    console.error("Google Sheets Background Sync Error (saveMenu):", err)
-  );
-  
-  res.json(menu[itemIndex]);
 });
 
+// Menu Item DELETE
 app.delete('/api/menu/:id', async (req, res) => {
   const { id } = req.params;
-  let menu = await getMenuFromDb();
-  
-  menu = menu.filter(item => item.id !== id);
-  writeLocal(MENU_PATH, menu);
-  
-  // Invalidate cache
-  cache.menu.timestamp = 0;
-  
-  // Save to Supabase
   try {
-    if (supabase) {
-      await supabase.from('menu').delete().eq('id', id);
-    }
+    const { error } = await supabase.from('menu').delete().eq('id', id);
+    if (error) throw error;
+
+    // Google Sheets Sync in background
+    syncMenuToSheets().catch(() => {});
+
+    res.json({ success: true });
   } catch (err) {
-    console.error("Failed to delete menu item from Supabase:", err.message);
+    res.status(500).json({ error: 'ลบรายการเมนูล้มเหลว: ' + err.message });
   }
-  
-  // Sync to Google Sheets in background
-  syncWithGoogleSheets('saveMenu', { data: menu }).catch(err => 
-    console.error("Google Sheets Background Sync Error (saveMenu):", err)
-  );
-  
-  res.json({ success: true });
 });
 
-// Orders
+// Helper for menu sheet sync
+async function syncMenuToSheets() {
+  try {
+    const { data } = await supabase.from('menu').select('*').order('created_at', { ascending: true });
+    if (data) {
+      const formatted = data.map(item => ({
+        id: item.id,
+        name: item.name,
+        price: parseFloat(item.price) || 0,
+        stock: parseInt(item.stock) || 0,
+        image: item.image || '',
+        hasVariants: item.has_variants,
+        variants: item.variants || []
+      }));
+      await syncWithGoogleSheets('saveMenu', { data: formatted });
+    }
+  } catch (e) {}
+}
+
+// Orders GET
 app.get('/api/orders', async (req, res) => {
-  const localOrders = readLocal(ORDERS_PATH);
-  res.json(localOrders); // Respond instantly with local data (SWR)
+  try {
+    const { data, error } = await supabase.from('orders').select('*').order('timestamp', { ascending: false });
+    if (error) throw error;
 
-  const now = Date.now();
-  if (!cache.orders.data || (now - cache.orders.timestamp >= CACHE_DURATION_ORDERS)) {
-    getOrdersFromDb().then(dbOrders => {
-      cache.orders = { data: dbOrders, timestamp: Date.now() };
-      
-      syncWithGoogleSheets('getOrders').then(sheetOrders => {
-        if (sheetOrders && Array.isArray(sheetOrders)) {
-          writeLocal(ORDERS_PATH, sheetOrders);
-          
-          if (supabase) {
-            // Bulk sync orders from Sheets to Supabase if wanted
-            sheetOrders.forEach(async (order) => {
-              let itemsVal = order.items;
-              if (typeof itemsVal === 'string') {
-                try { itemsVal = JSON.parse(itemsVal); } catch (e) { itemsVal = []; }
-              }
-              await supabase.from('orders').upsert({
-                id: order.id,
-                timestamp: order.timestamp,
-                items: itemsVal,
-                total: order.total,
-                status: order.status,
-                payment_status: order.paymentStatus,
-                payment_method: order.paymentMethod || 'โอนเงิน',
-                table: order.table,
-                slip_image: order.slipImage
-              });
-            });
-          }
-        }
-      }).catch(() => {});
-    }).catch(() => {});
+    const formatted = data.map(order => ({
+      id: order.id,
+      timestamp: order.timestamp,
+      items: order.items,
+      total: parseFloat(order.total) || 0,
+      status: order.status,
+      paymentStatus: order.payment_status,
+      paymentMethod: order.payment_method,
+      table: order.table,
+      slipImage: order.slip_image || ''
+    }));
+    res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ error: 'ดึงข้อมูลออเดอร์ล้มเหลว: ' + err.message });
   }
 });
 
-// Get Single Order (for customer status check)
+// Get Single Order status (for customer tracking)
 app.get('/api/orders/:id', async (req, res) => {
   const { id } = req.params;
-  
   try {
-    if (supabase) {
-      const { data, error } = await supabase.from('orders').select('*').eq('id', id).single();
-      if (!error && data) {
-        const formatted = {
-          id: data.id,
-          timestamp: data.timestamp,
-          items: data.items,
-          total: parseFloat(data.total) || 0,
-          status: data.status,
-          paymentStatus: data.payment_status,
-          paymentMethod: data.payment_method,
-          table: data.table,
-          slipImage: data.slip_image || ''
-        };
-        return res.json(formatted);
-      }
+    const { data, error } = await supabase.from('orders').select('*').eq('id', id).single();
+    if (error || !data) {
+      return res.status(404).json({ error: 'ไม่พบออเดอร์' });
     }
-  } catch (err) {
-    console.error("Failed to fetch single order from Supabase:", err.message);
-  }
 
-  // Fallback to local
-  const orders = readLocal(ORDERS_PATH);
-  const order = orders.find(o => o.id === id);
-  if (!order) {
-    return res.status(404).json({ error: 'Order not found' });
+    const formatted = {
+      id: data.id,
+      timestamp: data.timestamp,
+      items: data.items,
+      total: parseFloat(data.total) || 0,
+      status: data.status,
+      paymentStatus: data.payment_status,
+      paymentMethod: data.payment_method,
+      table: data.table,
+      slipImage: data.slip_image || ''
+    };
+    res.json(formatted);
+  } catch (err) {
+    res.status(404).json({ error: 'ไม่พบออเดอร์' });
   }
-  res.json(order);
 });
 
 // Create Order (customer adds order)
 app.post('/api/orders', async (req, res) => {
   const { items, table, paymentMethod } = req.body;
   if (!items || items.length === 0) {
-    return res.status(400).json({ error: 'No items in order' });
+    return res.status(400).json({ error: 'ไม่มีสินค้าในออเดอร์' });
   }
 
-  const menu = await getMenuFromDb();
-  const orders = await getOrdersFromDb();
-
-  // Validate and update stock
-  let hasStockError = false;
-  const errorItems = [];
-
-  const updatedMenu = menu.map(menuItem => {
-    // Filter all order entries matching this menuItem.id
-    const orderedItemsForThisProduct = items.filter(item => item.id === menuItem.id);
-    
-    if (orderedItemsForThisProduct.length > 0) {
-      if (menuItem.hasVariants && Array.isArray(menuItem.variants)) {
-        // This product has variants. We must check and deduct stock for each ordered variant.
-        const updatedVariants = menuItem.variants.map(v => {
-          const orderedVariant = orderedItemsForThisProduct.find(o => o.variant === v.name);
-          if (orderedVariant) {
-            if (v.stock < orderedVariant.quantity) {
-              hasStockError = true;
-              errorItems.push(`${menuItem.name} (${v.name}) สต็อกเหลือ ${v.stock}`);
-            } else {
-              return { ...v, stock: v.stock - orderedVariant.quantity };
-            }
-          }
-          return v;
-        });
-        
-        // Calculate total stock as sum of variants stock
-        const newTotalStock = updatedVariants.reduce((sum, v) => sum + v.stock, 0);
-        return {
-          ...menuItem,
-          variants: updatedVariants,
-          stock: newTotalStock
-        };
-      } else {
-        // Product has no variants. Deduct top-level stock.
-        const totalQuantityOrdered = orderedItemsForThisProduct.reduce((sum, o) => sum + o.quantity, 0);
-        if (menuItem.stock < totalQuantityOrdered) {
-          hasStockError = true;
-          errorItems.push(`${menuItem.name} สต็อกเหลือ ${menuItem.stock}`);
-        } else {
-          return {
-            ...menuItem,
-            stock: menuItem.stock - totalQuantityOrdered
-          };
-        }
-      }
-    }
-    return menuItem;
-  });
-
-  if (hasStockError) {
-    return res.status(400).json({ error: `สินค้าหมดหรือสต็อกไม่พอ: ${errorItems.join(', ')}` });
-  }
-
-  // Save stock change locally and to Supabase & Sheet
-  writeLocal(MENU_PATH, updatedMenu);
-  
   try {
-    if (supabase) {
-      const promises = updatedMenu.map(async (m) => {
-        return supabase.from('menu').update({
-          stock: m.stock,
-          variants: m.variants
-        }).eq('id', m.id);
-      });
-      await Promise.all(promises);
-    }
-  } catch (err) {
-    console.error("Failed to update stock in Supabase on checkout:", err.message);
-  }
+    // 1. Fetch current menu items from Supabase
+    const { data: menuData, error: menuError } = await supabase.from('menu').select('*');
+    if (menuError) throw menuError;
 
-  syncWithGoogleSheets('saveMenu', { data: updatedMenu }).catch(err => 
-    console.error("Google Sheets Background Sync Error (saveMenu):", err)
-  );
+    // Validate and update stock
+    let hasStockError = false;
+    const errorItems = [];
 
-  // Calculate order total
-  let total = 0;
-  const orderItems = items.map(ordered => {
-    const original = menu.find(m => m.id === ordered.id);
-    const itemTotal = (original ? original.price : 0) * ordered.quantity;
-    total += itemTotal;
-    return {
-      id: ordered.id,
-      name: original ? original.name : 'Unknown Item',
-      price: original ? original.price : 0,
-      quantity: ordered.quantity,
-      variant: ordered.variant || '' // Keep track of selected variant/flavor
-    };
-  });
-
-  const newOrder = {
-    id: 'ord_' + Date.now() + '_' + Math.floor(1000 + Math.random() * 9000),
-    timestamp: new Date().toISOString(),
-    items: orderItems,
-    total: total,
-    status: 'pending', // pending, completed, cancelled
-    paymentStatus: 'unpaid', // unpaid, paid
-    table: table || 'ทั่วไป',
-    paymentMethod: paymentMethod || 'โอนเงิน',
-    slipImage: ''
-  };
-
-  orders.push(newOrder);
-  writeLocal(ORDERS_PATH, orders);
-
-  // Invalidate caches
-  cache.orders.timestamp = 0;
-  cache.menu.timestamp = 0;
-
-  // Save to Supabase
-  try {
-    if (supabase) {
-      await supabase.from('orders').insert({
-        id: newOrder.id,
-        timestamp: newOrder.timestamp,
-        items: newOrder.items,
-        total: newOrder.total,
-        status: newOrder.status,
-        payment_status: newOrder.paymentStatus,
-        payment_method: newOrder.paymentMethod,
-        table: newOrder.table,
-        slip_image: newOrder.slipImage
-      });
-    }
-  } catch (err) {
-    console.error("Failed to save order to Supabase:", err.message);
-  }
-
-  // Sync to Google Sheets in background
-  syncWithGoogleSheets('saveOrder', { data: newOrder }).catch(err => 
-    console.error("Google Sheets Background Sync Error (saveOrder):", err)
-  );
-
-  res.json(newOrder);
-});
-
-// Update Order (Admin/Customer pays, cancels, completes, etc.)
-app.put('/api/orders/:id', async (req, res) => {
-  const { id } = req.params;
-  const { status, paymentStatus, slipImage } = req.body;
-  const orders = await getOrdersFromDb();
-
-  const orderIndex = orders.findIndex(o => o.id === id);
-  if (orderIndex === -1) {
-    return res.status(404).json({ error: 'Order not found' });
-  }
-
-  // Handle cancellation: return items to stock
-  if (status === 'cancelled' && orders[orderIndex].status !== 'cancelled') {
-    const menu = await getMenuFromDb();
-    const orderItems = orders[orderIndex].items;
-    
-    const updatedMenu = menu.map(menuItem => {
-      const cancelledItemsForThisProduct = orderItems.filter(item => item.id === menuItem.id);
+    const updatedMenu = menuData.map(menuItem => {
+      const orderedItemsForThisProduct = items.filter(item => item.id === menuItem.id);
       
-      if (cancelledItemsForThisProduct.length > 0) {
-        if (menuItem.hasVariants && Array.isArray(menuItem.variants)) {
-          // Return stock to each specific variant
+      if (orderedItemsForThisProduct.length > 0) {
+        if (menuItem.has_variants && Array.isArray(menuItem.variants)) {
           const updatedVariants = menuItem.variants.map(v => {
-            const cancelledVar = cancelledItemsForThisProduct.find(c => c.variant === v.name);
-            if (cancelledVar) {
-              return { ...v, stock: v.stock + cancelledVar.quantity };
+            const orderedVariant = orderedItemsForThisProduct.find(o => o.variant === v.name);
+            if (orderedVariant) {
+              if (v.stock < orderedVariant.quantity) {
+                hasStockError = true;
+                errorItems.push(`${menuItem.name} (${v.name}) สต็อกเหลือ ${v.stock}`);
+              } else {
+                return { ...v, stock: v.stock - orderedVariant.quantity };
+              }
             }
             return v;
           });
+          
           const newTotalStock = updatedVariants.reduce((sum, v) => sum + v.stock, 0);
           return {
             ...menuItem,
@@ -690,246 +347,375 @@ app.put('/api/orders/:id', async (req, res) => {
             stock: newTotalStock
           };
         } else {
-          // Return stock to top-level
-          const totalQuantityToReturn = cancelledItemsForThisProduct.reduce((sum, c) => sum + c.quantity, 0);
-          return {
-            ...menuItem,
-            stock: menuItem.stock + totalQuantityToReturn
-          };
+          const totalQuantityOrdered = orderedItemsForThisProduct.reduce((sum, o) => sum + o.quantity, 0);
+          if (menuItem.stock < totalQuantityOrdered) {
+            hasStockError = true;
+            errorItems.push(`${menuItem.name} สต็อกเหลือ ${menuItem.stock}`);
+          } else {
+            return {
+              ...menuItem,
+              stock: menuItem.stock - totalQuantityOrdered
+            };
+          }
         }
       }
       return menuItem;
     });
 
-    writeLocal(MENU_PATH, updatedMenu);
-    
-    try {
-      if (supabase) {
-        const promises = updatedMenu.map(async (m) => {
-          return supabase.from('menu').update({
-            stock: m.stock,
-            variants: m.variants
-          }).eq('id', m.id);
-        });
-        await Promise.all(promises);
-      }
-    } catch (err) {
-      console.error("Failed to restore stocks in Supabase on cancellation:", err.message);
+    if (hasStockError) {
+      return res.status(400).json({ error: `สินค้าหมดหรือสต็อกไม่พอ: ${errorItems.join(', ')}` });
     }
 
-    syncWithGoogleSheets('saveMenu', { data: updatedMenu }).catch(err => 
-      console.error("Google Sheets Background Sync Error (saveMenu):", err)
-    );
-  }
+    // 2. Update stock in Supabase
+    const promises = updatedMenu.map(m => {
+      return supabase.from('menu').update({
+        stock: m.stock,
+        variants: m.variants
+      }).eq('id', m.id);
+    });
+    await Promise.all(promises);
 
-  orders[orderIndex] = {
-    ...orders[orderIndex],
-    status: status !== undefined ? status : orders[orderIndex].status,
-    paymentStatus: paymentStatus !== undefined ? paymentStatus : orders[orderIndex].paymentStatus,
-    slipImage: slipImage !== undefined ? slipImage : orders[orderIndex].slipImage
-  };
+    // Calculate order total
+    let total = 0;
+    const orderItems = items.map(ordered => {
+      const original = menuData.find(m => m.id === ordered.id);
+      const itemTotal = (original ? parseFloat(original.price) : 0) * ordered.quantity;
+      total += itemTotal;
+      return {
+        id: ordered.id,
+        name: original ? original.name : 'Unknown Item',
+        price: original ? parseFloat(original.price) : 0,
+        quantity: ordered.quantity,
+        variant: ordered.variant || ''
+      };
+    });
 
-  writeLocal(ORDERS_PATH, orders);
-
-  // Invalidate caches
-  cache.orders.timestamp = 0;
-  cache.menu.timestamp = 0; // stock could return if cancelled
-
-  // Save to Supabase
-  try {
-    if (supabase) {
-      const updateObj = {};
-      if (status !== undefined) updateObj.status = status;
-      if (paymentStatus !== undefined) updateObj.payment_status = paymentStatus;
-      if (slipImage !== undefined) updateObj.slip_image = slipImage;
-      
-      await supabase.from('orders').update(updateObj).eq('id', id);
-    }
-  } catch (err) {
-    console.error("Failed to update order status in Supabase:", err.message);
-  }
-
-  // Sync to Google Sheets in background
-  syncWithGoogleSheets('saveOrder', { data: orders[orderIndex] }).catch(err => 
-    console.error("Google Sheets Background Sync Error (saveOrder):", err)
-  );
-
-  res.json(orders[orderIndex]);
-});
-
-// Delete Order History
-app.delete('/api/orders/:id', async (req, res) => {
-  const { id } = req.params;
-  let orders = await getOrdersFromDb();
-
-  orders = orders.filter(o => o.id !== id);
-  writeLocal(ORDERS_PATH, orders);
-
-  // Invalidate cache
-  cache.orders.timestamp = 0;
-
-  // Save to Supabase
-  try {
-    if (supabase) {
-      await supabase.from('orders').delete().eq('id', id);
-    }
-  } catch (err) {
-    console.error("Failed to delete order from Supabase:", err.message);
-  }
-
-  // Sync to Google Sheets by overwriting orders list in background
-  syncWithGoogleSheets('saveOrdersList', { data: orders }).catch(err => 
-    console.error("Google Sheets Background Sync Error (saveOrdersList):", err)
-  );
-
-  res.json({ success: true });
-});
-
-// Edit Order Items (Swap products/flavors, change quantities)
-app.put('/api/orders/:id/items', async (req, res) => {
-  const { id } = req.params;
-  const { items } = req.body; // array of { id, quantity, variant }
-  
-  if (!items || !Array.isArray(items)) {
-    return res.status(400).json({ error: 'Invalid items array' });
-  }
-
-  const orders = await getOrdersFromDb();
-  const orderIndex = orders.findIndex(o => o.id === id);
-  if (orderIndex === -1) {
-    return res.status(404).json({ error: 'Order not found' });
-  }
-
-  const order = orders[orderIndex];
-  const menu = await getMenuFromDb();
-  const originalOrderItems = order.items;
-
-  // Step 1: Temporarily add back stock of all items in the original order
-  const tempMenu = menu.map(menuItem => {
-    const originalItemsForThisProduct = originalOrderItems.filter(item => item.id === menuItem.id);
-    if (originalItemsForThisProduct.length > 0) {
-      if (menuItem.hasVariants && Array.isArray(menuItem.variants)) {
-        const updatedVariants = menuItem.variants.map(v => {
-          const originalVar = originalItemsForThisProduct.find(o => o.variant === v.name);
-          if (originalVar) {
-            return { ...v, stock: v.stock + originalVar.quantity };
-          }
-          return v;
-        });
-        const newTotalStock = updatedVariants.reduce((sum, v) => sum + v.stock, 0);
-        return { ...menuItem, variants: updatedVariants, stock: newTotalStock };
-      } else {
-        const totalQuantityToReturn = originalItemsForThisProduct.reduce((sum, o) => sum + o.quantity, 0);
-        return { ...menuItem, stock: menuItem.stock + totalQuantityToReturn };
-      }
-    }
-    return menuItem;
-  });
-
-  // Step 2: Validate and deduct stock for the new items list from the tempMenu
-  let hasStockError = false;
-  const errorItems = [];
-
-  const updatedMenu = tempMenu.map(menuItem => {
-    const newItemsForThisProduct = items.filter(item => item.id === menuItem.id);
-    if (newItemsForThisProduct.length > 0) {
-      if (menuItem.hasVariants && Array.isArray(menuItem.variants)) {
-        const updatedVariants = menuItem.variants.map(v => {
-          const newItemVar = newItemsForThisProduct.find(n => n.variant === v.name);
-          if (newItemVar) {
-            if (v.stock < newItemVar.quantity) {
-              hasStockError = true;
-              errorItems.push(`${menuItem.name} (${v.name}) สต็อกเหลือ ${v.stock}`);
-            } else {
-              return { ...v, stock: v.stock - newItemVar.quantity };
-            }
-          }
-          return v;
-        });
-        const newTotalStock = updatedVariants.reduce((sum, v) => sum + v.stock, 0);
-        return { ...menuItem, variants: updatedVariants, stock: newTotalStock };
-      } else {
-        const totalQuantityOrdered = newItemsForThisProduct.reduce((sum, n) => sum + n.quantity, 0);
-        if (menuItem.stock < totalQuantityOrdered) {
-          hasStockError = true;
-          errorItems.push(`${menuItem.name} สต็อกเหลือ ${menuItem.stock}`);
-        } else {
-          return { ...menuItem, stock: menuItem.stock - totalQuantityOrdered };
-        }
-      }
-    }
-    return menuItem;
-  });
-
-  if (hasStockError) {
-    return res.status(400).json({ error: `สต็อกสินค้าไม่พอ: ${errorItems.join(', ')}` });
-  }
-
-  // Calculate order total
-  let total = 0;
-  const updatedOrderItems = items.map(ordered => {
-    const original = menu.find(m => m.id === ordered.id);
-    const itemTotal = (original ? original.price : 0) * ordered.quantity;
-    total += itemTotal;
-    return {
-      id: ordered.id,
-      name: original ? original.name : 'Unknown Item',
-      price: original ? original.price : 0,
-      quantity: ordered.quantity,
-      variant: ordered.variant || ''
+    const newOrder = {
+      id: 'ord_' + Date.now() + '_' + Math.floor(1000 + Math.random() * 9000),
+      timestamp: new Date().toISOString(),
+      items: orderItems,
+      total: total,
+      status: 'pending',
+      payment_status: 'unpaid',
+      payment_method: paymentMethod || 'โอนเงิน',
+      table: table || 'ทั่วไป',
+      slip_image: ''
     };
-  });
 
-  // Update menu and order
-  orders[orderIndex] = {
-    ...orders[orderIndex],
-    items: updatedOrderItems,
-    total: total
-  };
+    // 3. Insert order into Supabase
+    const { error: orderError } = await supabase.from('orders').insert(newOrder);
+    if (orderError) throw orderError;
 
-  // Write changes locally
-  writeLocal(MENU_PATH, updatedMenu);
-  writeLocal(ORDERS_PATH, orders);
+    // Convert keys for response compatibility
+    const responseOrder = {
+      id: newOrder.id,
+      timestamp: newOrder.timestamp,
+      items: newOrder.items,
+      total: newOrder.total,
+      status: newOrder.status,
+      paymentStatus: newOrder.payment_status,
+      paymentMethod: newOrder.payment_method,
+      table: newOrder.table,
+      slipImage: newOrder.slip_image
+    };
 
-  // Invalidate caches
-  cache.orders.timestamp = 0;
-  cache.menu.timestamp = 0;
+    // Background sync to Google Sheets
+    const formattedMenuForSheets = updatedMenu.map(m => ({
+      id: m.id,
+      name: m.name,
+      price: parseFloat(m.price) || 0,
+      stock: parseInt(m.stock) || 0,
+      image: m.image || '',
+      hasVariants: m.has_variants,
+      variants: m.variants || []
+    }));
+    syncWithGoogleSheets('saveMenu', { data: formattedMenuForSheets }).catch(() => {});
+    syncWithGoogleSheets('saveOrder', { data: responseOrder }).catch(() => {});
 
-  // Save to Supabase
+    res.json(responseOrder);
+  } catch (err) {
+    res.status(500).json({ error: 'สร้างคำสั่งซื้อล้มเหลว: ' + err.message });
+  }
+});
+
+// Update Order (Admin/Customer pays, cancels, completes, etc.)
+app.put('/api/orders/:id', async (req, res) => {
+  const { id } = req.params;
+  const { status, paymentStatus, slipImage } = req.body;
+
   try {
-    if (supabase) {
-      const stockPromises = updatedMenu.map(async (m) => {
+    // 1. Fetch current order
+    const { data: order, error: orderFetchError } = await supabase.from('orders').select('*').eq('id', id).single();
+    if (orderFetchError) throw orderFetchError;
+
+    // Handle cancellation: return items to stock
+    if (status === 'cancelled' && order.status !== 'cancelled') {
+      const { data: menuData, error: menuFetchError } = await supabase.from('menu').select('*');
+      if (menuFetchError) throw menuFetchError;
+
+      const orderItems = order.items;
+      const updatedMenu = menuData.map(menuItem => {
+        const cancelledItemsForThisProduct = orderItems.filter(item => item.id === menuItem.id);
+        
+        if (cancelledItemsForThisProduct.length > 0) {
+          if (menuItem.has_variants && Array.isArray(menuItem.variants)) {
+            const updatedVariants = menuItem.variants.map(v => {
+              const cancelledVar = cancelledItemsForThisProduct.find(c => c.variant === v.name);
+              if (cancelledVar) {
+                return { ...v, stock: v.stock + cancelledVar.quantity };
+              }
+              return v;
+            });
+            const newTotalStock = updatedVariants.reduce((sum, v) => sum + v.stock, 0);
+            return {
+              ...menuItem,
+              variants: updatedVariants,
+              stock: newTotalStock
+            };
+          } else {
+            const totalQuantityToReturn = cancelledItemsForThisProduct.reduce((sum, c) => sum + c.quantity, 0);
+            return {
+              ...menuItem,
+              stock: menuItem.stock + totalQuantityToReturn
+            };
+          }
+        }
+        return menuItem;
+      });
+
+      // Update stock in Supabase
+      const promises = updatedMenu.map(m => {
         return supabase.from('menu').update({
           stock: m.stock,
           variants: m.variants
         }).eq('id', m.id);
       });
-      await Promise.all(stockPromises);
+      await Promise.all(promises);
 
-      await supabase.from('orders').update({
-        items: updatedOrderItems,
-        total: total
-      }).eq('id', id);
+      // Sync menu to Sheets
+      const formattedMenuForSheets = updatedMenu.map(m => ({
+        id: m.id,
+        name: m.name,
+        price: parseFloat(m.price) || 0,
+        stock: parseInt(m.stock) || 0,
+        image: m.image || '',
+        hasVariants: m.has_variants,
+        variants: m.variants || []
+      }));
+      syncWithGoogleSheets('saveMenu', { data: formattedMenuForSheets }).catch(() => {});
     }
+
+    // 2. Update order in Supabase
+    const updateObj = {};
+    if (status !== undefined) updateObj.status = status;
+    if (paymentStatus !== undefined) updateObj.payment_status = paymentStatus;
+    if (slipImage !== undefined) updateObj.slip_image = slipImage;
+
+    const { data: updatedOrder, error: orderUpdateError } = await supabase.from('orders').update(updateObj).eq('id', id).select().single();
+    if (orderUpdateError) throw orderUpdateError;
+
+    const responseOrder = {
+      id: updatedOrder.id,
+      timestamp: updatedOrder.timestamp,
+      items: updatedOrder.items,
+      total: parseFloat(updatedOrder.total) || 0,
+      status: updatedOrder.status,
+      paymentStatus: updatedOrder.payment_status,
+      paymentMethod: updatedOrder.payment_method,
+      table: updatedOrder.table,
+      slipImage: updatedOrder.slip_image || ''
+    };
+
+    // Sync to Sheets
+    syncWithGoogleSheets('saveOrder', { data: responseOrder }).catch(() => {});
+
+    res.json(responseOrder);
   } catch (err) {
-    console.error("Failed to update order items in Supabase:", err.message);
+    res.status(500).json({ error: 'อัปเดตสถานะออเดอร์ล้มเหลว: ' + err.message });
+  }
+});
+
+// Delete Order History
+app.delete('/api/orders/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { error } = await supabase.from('orders').delete().eq('id', id);
+    if (error) throw error;
+
+    // Trigger full sheets sync in background to update order list
+    syncAllOrdersToSheets().catch(() => {});
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'ลบประวัติออเดอร์ล้มเหลว: ' + err.message });
+  }
+});
+
+// Edit Order Items (Swap products/flavors, change quantities)
+app.put('/api/orders/:id/items', async (req, res) => {
+  const { id } = req.params;
+  const { items } = req.body;
+  if (!items || !Array.isArray(items)) {
+    return res.status(400).json({ error: 'Invalid items array' });
   }
 
-  // Sync to Google Sheets
-  syncWithGoogleSheets('saveMenu', { data: updatedMenu }).catch(err => 
-    console.error("Google Sheets Background Sync Error (saveMenu):", err)
-  );
-  syncWithGoogleSheets('saveOrder', { data: orders[orderIndex] }).catch(err => 
-    console.error("Google Sheets Background Sync Error (saveOrder):", err)
-  );
+  try {
+    // 1. Fetch order and menu
+    const { data: order, error: orderError } = await supabase.from('orders').select('*').eq('id', id).single();
+    if (orderError) throw orderError;
 
-  res.json(orders[orderIndex]);
+    const { data: menu, error: menuError } = await supabase.from('menu').select('*');
+    if (menuError) throw menuError;
+
+    const originalOrderItems = order.items;
+
+    // Step 1: Temporarily add back stock of all items in the original order
+    const tempMenu = menu.map(menuItem => {
+      const originalItemsForThisProduct = originalOrderItems.filter(item => item.id === menuItem.id);
+      if (originalItemsForThisProduct.length > 0) {
+        if (menuItem.has_variants && Array.isArray(menuItem.variants)) {
+          const updatedVariants = menuItem.variants.map(v => {
+            const originalVar = originalItemsForThisProduct.find(o => o.variant === v.name);
+            if (originalVar) {
+              return { ...v, stock: v.stock + originalVar.quantity };
+            }
+            return v;
+          });
+          const newTotalStock = updatedVariants.reduce((sum, v) => sum + v.stock, 0);
+          return { ...menuItem, variants: updatedVariants, stock: newTotalStock };
+        } else {
+          const totalQuantityToReturn = originalItemsForThisProduct.reduce((sum, o) => sum + o.quantity, 0);
+          return { ...menuItem, stock: menuItem.stock + totalQuantityToReturn };
+        }
+      }
+      return menuItem;
+    });
+
+    // Step 2: Validate and deduct stock for the new items list from the tempMenu
+    let hasStockError = false;
+    const errorItems = [];
+
+    const updatedMenu = tempMenu.map(menuItem => {
+      const newItemsForThisProduct = items.filter(item => item.id === menuItem.id);
+      if (newItemsForThisProduct.length > 0) {
+        if (menuItem.has_variants && Array.isArray(menuItem.variants)) {
+          const updatedVariants = menuItem.variants.map(v => {
+            const newItemVar = newItemsForThisProduct.find(n => n.variant === v.name);
+            if (newItemVar) {
+              if (v.stock < newItemVar.quantity) {
+                hasStockError = true;
+                errorItems.push(`${menuItem.name} (${v.name}) สต็อกเหลือ ${v.stock}`);
+              } else {
+                return { ...v, stock: v.stock - newItemVar.quantity };
+              }
+            }
+            return v;
+          });
+          const newTotalStock = updatedVariants.reduce((sum, v) => sum + v.stock, 0);
+          return { ...menuItem, variants: updatedVariants, stock: newTotalStock };
+        } else {
+          const totalQuantityOrdered = newItemsForThisProduct.reduce((sum, n) => sum + n.quantity, 0);
+          if (menuItem.stock < totalQuantityOrdered) {
+            hasStockError = true;
+            errorItems.push(`${menuItem.name} สต็อกเหลือ ${menuItem.stock}`);
+          } else {
+            return { ...menuItem, stock: menuItem.stock - totalQuantityOrdered };
+          }
+        }
+      }
+      return menuItem;
+    });
+
+    if (hasStockError) {
+      return res.status(400).json({ error: `สต็อกสินค้าไม่พอ: ${errorItems.join(', ')}` });
+    }
+
+    // Calculate order total
+    let total = 0;
+    const updatedOrderItems = items.map(ordered => {
+      const original = menu.find(m => m.id === ordered.id);
+      const itemTotal = (original ? parseFloat(original.price) : 0) * ordered.quantity;
+      total += itemTotal;
+      return {
+        id: ordered.id,
+        name: original ? original.name : 'Unknown Item',
+        price: original ? parseFloat(original.price) : 0,
+        quantity: ordered.quantity,
+        variant: ordered.variant || ''
+      };
+    });
+
+    // 2. Update DB
+    const stockPromises = updatedMenu.map(m => {
+      return supabase.from('menu').update({
+        stock: m.stock,
+        variants: m.variants
+      }).eq('id', m.id);
+    });
+    await Promise.all(stockPromises);
+
+    const { data: updatedOrder, error: orderUpdateError } = await supabase.from('orders').update({
+      items: updatedOrderItems,
+      total: total
+    }).eq('id', id).select().single();
+    if (orderUpdateError) throw orderUpdateError;
+
+    const responseOrder = {
+      id: updatedOrder.id,
+      timestamp: updatedOrder.timestamp,
+      items: updatedOrder.items,
+      total: parseFloat(updatedOrder.total) || 0,
+      status: updatedOrder.status,
+      paymentStatus: updatedOrder.payment_status,
+      paymentMethod: updatedOrder.payment_method,
+      table: updatedOrder.table,
+      slipImage: updatedOrder.slip_image || ''
+    };
+
+    // Sheets sync in background
+    const formattedMenuForSheets = updatedMenu.map(m => ({
+      id: m.id,
+      name: m.name,
+      price: parseFloat(m.price) || 0,
+      stock: parseInt(m.stock) || 0,
+      image: m.image || '',
+      hasVariants: m.has_variants,
+      variants: m.variants || []
+    }));
+    syncWithGoogleSheets('saveMenu', { data: formattedMenuForSheets }).catch(() => {});
+    syncWithGoogleSheets('saveOrder', { data: responseOrder }).catch(() => {});
+
+    res.json(responseOrder);
+  } catch (err) {
+    res.status(500).json({ error: 'แก้ไขคำสั่งซื้อล้มเหลว: ' + err.message });
+  }
 });
+
+// Full sheets sync helper
+async function syncAllOrdersToSheets() {
+  try {
+    const { data } = await supabase.from('orders').select('*').order('timestamp', { ascending: false });
+    if (data) {
+      const formatted = data.map(order => ({
+        id: order.id,
+        timestamp: order.timestamp,
+        items: order.items,
+        total: parseFloat(order.total) || 0,
+        status: order.status,
+        paymentStatus: order.payment_status,
+        paymentMethod: order.payment_method,
+        table: order.table,
+        slipImage: order.slip_image || ''
+      }));
+      await syncWithGoogleSheets('saveOrdersList', { data: formatted });
+    }
+  } catch (e) {}
+}
 
 // Generate PromptPay QR
 app.get('/api/promptpay-qr', async (req, res) => {
   const amount = parseFloat(req.query.amount);
-  const settings = await getSettingsFromDb();
+  const settings = await getSettings();
 
   if (!settings.promptPayId) {
     return res.status(400).json({ error: 'ไม่ได้ตั้งค่าเบอร์พร้อมเพย์ในแผงควบคุมแอดมิน' });
@@ -1018,54 +804,58 @@ app.post('/api/upload', (req, res) => {
 
 // Daily Sales Statistics Summary
 app.get('/api/stats', async (req, res) => {
-  // Use local orders directly (kept in sync via SWR in the background)
-  const orders = readLocal(ORDERS_PATH);
+  try {
+    const { data: orders, error } = await supabase.from('orders').select('*');
+    if (error) throw error;
 
-  const stats = {};
-  
-  orders.forEach(order => {
-    // Process only paid or completed orders
-    if (order.paymentStatus !== 'paid' && order.status !== 'completed') return;
+    const stats = {};
+    
+    orders.forEach(order => {
+      // Process only paid or completed orders
+      if (order.payment_status !== 'paid' && order.status !== 'completed') return;
 
-    // Extract date in YYYY-MM-DD format based on local time
-    const dateObj = new Date(order.timestamp);
-    const yyyy = dateObj.getFullYear();
-    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const dd = String(dateObj.getDate()).padStart(2, '0');
-    const localDate = `${yyyy}-${mm}-${dd}`;
+      // Extract date in YYYY-MM-DD format based on local time
+      const dateObj = new Date(order.timestamp);
+      const yyyy = dateObj.getFullYear();
+      const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const dd = String(dateObj.getDate()).padStart(2, '0');
+      const localDate = `${yyyy}-${mm}-${dd}`;
 
-    if (!stats[localDate]) {
-      stats[localDate] = {
-        totalRevenue: 0,
-        orderCount: 0,
-        itemsSold: {} // itemName -> quantity
-      };
-    }
-
-    stats[localDate].totalRevenue += parseFloat(order.total) || 0;
-    stats[localDate].orderCount += 1;
-
-    // Support items parsing (if sheet returned items as string or array)
-    let items = order.items;
-    if (typeof items === 'string') {
-      try {
-        items = JSON.parse(items);
-      } catch (e) {
-        items = [];
+      if (!stats[localDate]) {
+        stats[localDate] = {
+          totalRevenue: 0,
+          orderCount: 0,
+          itemsSold: {}
+        };
       }
-    }
 
-    if (Array.isArray(items)) {
-      items.forEach(item => {
-        if (!stats[localDate].itemsSold[item.name]) {
-          stats[localDate].itemsSold[item.name] = 0;
+      stats[localDate].totalRevenue += parseFloat(order.total) || 0;
+      stats[localDate].orderCount += 1;
+
+      // Support items parsing (if sheet returned items as string or array)
+      let items = order.items;
+      if (typeof items === 'string') {
+        try {
+          items = JSON.parse(items);
+        } catch (e) {
+          items = [];
         }
-        stats[localDate].itemsSold[item.name] += parseInt(item.quantity) || 0;
-      });
-    }
-  });
+      }
 
-  res.json(stats);
+      if (Array.isArray(items)) {
+        items.forEach(item => {
+          if (!stats[localDate].itemsSold[item.name]) {
+            stats[localDate].itemsSold[item.name] = 0;
+          }
+          stats[localDate].itemsSold[item.name] += parseInt(item.quantity) || 0;
+        });
+      }
+    });
+
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: 'ดึงสถิติล้มเหลว: ' + err.message });
+  }
 });
 
 // Export app for Vercel Serverless Functions
