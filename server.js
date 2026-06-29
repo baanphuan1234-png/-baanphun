@@ -802,6 +802,21 @@ app.post('/api/upload', (req, res) => {
   res.json({ imageUrl: fileUrl });
 });
 
+// Database Size statistics
+app.get('/api/db-size', async (req, res) => {
+  try {
+    if (supabase) {
+      const { data, error } = await supabase.rpc('get_db_size');
+      if (error) throw error;
+      res.json(data);
+    } else {
+      res.json({ error: 'Supabase not initialized' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch DB size: ' + err.message });
+  }
+});
+
 // Daily Sales Statistics Summary
 app.get('/api/stats', async (req, res) => {
   try {

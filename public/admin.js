@@ -245,6 +245,7 @@ function showDashboard(loginWrapper, dashboardLayout) {
   fetchSettings();
   fetchMenu();
   fetchOrders();
+  fetchDbSize();
 
   // Poll orders & stats every 5 seconds to keep admin updated
   setInterval(() => {
@@ -319,6 +320,11 @@ function setupEventListeners() {
 
   // Settings
   saveSettingsBtn.addEventListener('click', saveSettings);
+
+  const refreshDbSizeBtn = document.getElementById('refresh-db-size-btn');
+  if (refreshDbSizeBtn) {
+    refreshDbSizeBtn.addEventListener('click', () => fetchDbSize());
+  }
   
   // Script copier
   viewScriptBtn.addEventListener('click', () => scriptModal.classList.add('active'));
@@ -417,6 +423,39 @@ function setupEventListeners() {
       selectedStatsDate = null;
       renderStats();
     });
+  }
+}
+
+// Fetch Database Size
+async function fetchDbSize() {
+  const dbTotalSize = document.getElementById('db-total-size');
+  const dbMenuSize = document.getElementById('db-menu-size');
+  const dbOrdersSize = document.getElementById('db-orders-size');
+  const refreshDbSizeBtn = document.getElementById('refresh-db-size-btn');
+  
+  if (!dbTotalSize) return;
+
+  if (refreshDbSizeBtn) {
+    refreshDbSizeBtn.disabled = true;
+    refreshDbSizeBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังตรวจสอบ...`;
+  }
+
+  try {
+    const response = await fetch('/api/db-size');
+    if (!response.ok) throw new Error('Failed to fetch DB size');
+    const data = await response.json();
+    
+    dbTotalSize.textContent = data.total_pretty || '-';
+    dbMenuSize.textContent = data.menu_pretty || '-';
+    dbOrdersSize.textContent = data.orders_pretty || '-';
+  } catch (err) {
+    console.error('Error fetching DB size:', err);
+    dbTotalSize.textContent = 'ล้มเหลว';
+  } finally {
+    if (refreshDbSizeBtn) {
+      refreshDbSizeBtn.disabled = false;
+      refreshDbSizeBtn.innerHTML = `<i class="fa-solid fa-arrows-rotate"></i> อัปเดตขนาดพื้นที่`;
+    }
   }
 }
 

@@ -226,6 +226,32 @@
                   บันทึกการตั้งค่าสำเร็จ!
                 </div>
               </div>
+
+              <div class="card mt-4">
+                <h3 class="mb-4" style="font-size: 1.15rem; font-weight: 600;"><i class="fa-solid fa-database text-primary"></i> พื้นที่ฐานข้อมูล (Supabase DB Size)</h3>
+                <div style="font-size: 0.9rem; color: var(--text-main); margin-bottom: 0.5rem;">
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-weight: 600;">
+                    <span>พื้นที่รวมที่ใช้:</span>
+                    <strong id="db-total-size">กำลังตรวจสอบ...</strong>
+                  </div>
+                  <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;">
+                    ขีดจำกัดบัญชีฟรี: <strong>500 MB</strong>
+                  </div>
+                  <div style="border-top: 1px dashed var(--border-color); padding-top: 0.75rem; display: flex; flex-direction: column; gap: 0.35rem;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                      <span>ตารางเมนูอาหาร (Menu):</span>
+                      <span id="db-menu-size">-</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                      <span>ตารางออเดอร์ (Orders):</span>
+                      <span id="db-orders-size">-</span>
+                    </div>
+                  </div>
+                </div>
+                <button class="btn btn-outline btn-sm" id="refresh-db-size-btn" style="width: 100%; padding: 0.4rem; font-size: 0.8rem; margin-top: 0.75rem;">
+                  <i class="fa-solid fa-arrows-rotate"></i> อัปเดตขนาดพื้นที่
+                </button>
+              </div>
             </div>
 
             <!-- Tabletop QR Code Generator -->
