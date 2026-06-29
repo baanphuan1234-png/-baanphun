@@ -647,32 +647,15 @@ async function handleImageUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
 
-  uploadPlaceholder.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i><span>กำลังอัปโหลดรูปภาพ...</span>`;
+  uploadPlaceholder.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i><span>กำลังโหลดรูปภาพ...</span>`;
   
   const reader = new FileReader();
   reader.readAsDataURL(file);
   
   reader.onload = async () => {
     const base64Data = reader.result;
-    
-    try {
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64Data })
-      });
-      
-      const result = await response.json();
-      if (response.ok && result.imageUrl) {
-        productImageUrl.value = result.imageUrl;
-        showImagePreview(result.imageUrl);
-      } else {
-        throw new Error(result.error);
-      }
-    } catch (err) {
-      alert(`อัปโหลดรูปภาพล้มเหลว: ${err.message}`);
-      resetImagePreview();
-    }
+    productImageUrl.value = base64Data;
+    showImagePreview(base64Data);
   };
 }
 
@@ -918,7 +901,7 @@ function renderOrdersBoard(ordersList) {
       slipHtml = `
         <div class="order-slip-preview mt-2" style="margin-top: 0.75rem; border-top: 1px dashed var(--border-color); padding-top: 0.75rem; text-align: center;">
           <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; text-align: left; color: var(--text-muted);">สลิปโอนเงินของลูกค้า:</div>
-          <div style="cursor: pointer;" onclick="viewOrderSlip('${order.slipImage}')" title="คลิกเพื่อดูรูปภาพสลิปเต็ม">
+          <div style="cursor: pointer;" onclick="viewOrderSlip('${order.id}')" title="คลิกเพื่อดูรูปภาพสลิปเต็ม">
             <img src="${order.slipImage}" style="max-width: 100%; max-height: 180px; object-fit: contain; border-radius: var(--radius-md); border: 1px solid var(--border-color);" onerror="this.onerror=null; this.src='https://placehold.co/120x160/f1f5f9/94a3b8?text=SlipNotFound';">
             <div style="font-size: 0.75rem; color: var(--primary); text-decoration: underline; margin-top: 0.25rem;"><i class="fa-solid fa-magnifying-glass-plus"></i> คลิกเพื่อดูรูปสลิปเต็ม</div>
           </div>
@@ -1028,11 +1011,13 @@ window.closePaymentModal = function() {
   paymentModal.classList.remove('active');
 };
 
-window.viewOrderSlip = function(imageUrl) {
+window.viewOrderSlip = function(orderId) {
+  const order = orders.find(o => o.id === orderId);
+  if (!order || !order.slipImage) return;
   const slipModal = document.getElementById('slip-modal');
   const slipModalImg = document.getElementById('slip-modal-img');
   if (slipModal && slipModalImg) {
-    slipModalImg.src = imageUrl;
+    slipModalImg.src = order.slipImage;
     slipModal.classList.add('active');
   }
 };

@@ -386,6 +386,9 @@ function updateCartQty(cartKey, change) {
 function updateCartUI() {
   const cartKeys = Object.keys(cart);
   
+  // Reset button state whenever cart UI updates
+  submitOrderBtn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> ยืนยันการสั่งซื้อ`;
+  
   if (cartKeys.length === 0) {
     emptyCartMessage.style.display = 'block';
     cartItemsContainer.innerHTML = '';
@@ -544,8 +547,8 @@ async function pollOrderStatus() {
     }
     const myOrder = await response.json();
 
-    // If order was completed and paid, we can let user clean it or automatically dismiss after a while
-    if (myOrder.status === 'completed' && myOrder.paymentStatus === 'paid') {
+    // If order was completed and paid, or cancelled, stop polling to save resource
+    if (myOrder.status === 'cancelled' || (myOrder.status === 'completed' && myOrder.paymentStatus === 'paid')) {
       // Order done! We can keep button visible but notify user
       // Stop polling to save resource
       clearInterval(pollingInterval);
@@ -777,25 +780,11 @@ window.uploadPaymentSlip = async function(event, orderId) {
     const base64Data = reader.result;
     
     try {
-      // 1. Upload base64 image
-      const uploadResponse = await fetch('/api/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64Data })
-      });
-      
-      const uploadResult = await uploadResponse.json();
-      if (!uploadResponse.ok || !uploadResult.imageUrl) {
-        throw new Error(uploadResult.error || 'Failed to upload image');
-      }
-      
-      const imageUrl = uploadResult.imageUrl;
-      
-      // 2. Put order status update with slipImage URL
+      // Direct update order status with slipImage base64
       const orderResponse = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slipImage: imageUrl })
+        body: JSON.stringify({ slipImage: base64Data })
       });
       
       const orderResult = await orderResponse.json();
