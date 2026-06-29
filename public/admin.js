@@ -1172,7 +1172,7 @@ function renderStats() {
       if (order.paymentStatus === 'paid') {
         paymentStatusBadge = '<span class="text-success" style="font-weight:600;"><i class="fa-solid fa-circle-check"></i> ชำระแล้ว</span>';
         if (order.slipImage) {
-          paymentStatusBadge += `<br><a href="${order.slipImage}" target="_blank" style="font-size: 0.75rem; text-decoration: underline; color: var(--success-hover);"><i class="fa-solid fa-image"></i> ดูสลิปโอนเงิน</a>`;
+          paymentStatusBadge += `<br><span style="cursor: pointer; font-size: 0.75rem; text-decoration: underline; color: var(--success-hover);" onclick="viewOrderSlip('${order.id}')"><i class="fa-solid fa-image"></i> ดูสลิปโอนเงิน</span>`;
         }
       } else if (order.status === 'cancelled') {
         paymentStatusBadge = '<span class="text-danger" style="font-weight:600;"><i class="fa-solid fa-ban"></i> ยกเลิกออเดอร์</span>';
@@ -1180,7 +1180,7 @@ function renderStats() {
         paymentStatusBadge = '<span class="text-primary" style="font-weight:600;"><i class="fa-solid fa-clock"></i> รอชำระเงิน</span>';
         if (order.slipImage) {
           paymentStatusBadge = '<span class="text-warning" style="font-weight:600;"><i class="fa-solid fa-file-invoice-dollar"></i> ส่งสลิปแล้ว</span>';
-          paymentStatusBadge += `<br><a href="${order.slipImage}" target="_blank" style="font-size: 0.75rem; text-decoration: underline; color: var(--warning);"><i class="fa-solid fa-image"></i> ดูสลิปโอนเงิน</a>`;
+          paymentStatusBadge += `<br><span style="cursor: pointer; font-size: 0.75rem; text-decoration: underline; color: var(--warning);" onclick="viewOrderSlip('${order.id}')"><i class="fa-solid fa-image"></i> ดูสลิปโอนเงิน</span>`;
         }
       }
 
