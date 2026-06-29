@@ -649,6 +649,7 @@ header {
 
 .order-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: auto;
 }
