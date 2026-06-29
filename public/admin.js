@@ -70,6 +70,10 @@ const settingsPromptPayId = document.getElementById('settings-promptpay-id');
 const settingsSheetUrl = document.getElementById('settings-sheet-url');
 const saveSettingsBtn = document.getElementById('save-settings-btn');
 const settingsAlert = document.getElementById('settings-alert');
+const cleanupDays = document.getElementById('cleanup-days');
+const cleanupMode = document.getElementById('cleanup-mode');
+const cleanupDbBtn = document.getElementById('cleanup-db-btn');
+const cleanupAlert = document.getElementById('cleanup-alert');
 const qrTableNumber = document.getElementById('qr-table-number');
 const generateTableQrBtn = document.getElementById('generate-table-qr-btn');
 const tableQrResult = document.getElementById('table-qr-result');
@@ -325,6 +329,11 @@ function setupEventListeners() {
   if (refreshDbSizeBtn) {
     refreshDbSizeBtn.addEventListener('click', () => fetchDbSize());
   }
+
+  const cleanupDbBtn = document.getElementById('cleanup-db-btn');
+  if (cleanupDbBtn) {
+    cleanupDbBtn.addEventListener('click', cleanupDatabase);
+  }
   
   // Script copier
   viewScriptBtn.addEventListener('click', () => scriptModal.classList.add('active'));
@@ -522,6 +531,53 @@ async function saveSettings() {
   } finally {
     saveSettingsBtn.disabled = false;
     saveSettingsBtn.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> บันทึกการตั้งค่าทั้งหมด`;
+  }
+}
+
+// Database Clean Up Tool
+async function cleanupDatabase() {
+  const days = cleanupDays.value;
+  const mode = cleanupMode.value;
+  
+  if (!days || !mode) return;
+
+  const modeText = mode === 'slips' 
+    ? 'ลบเฉพาะรูปภาพสลิปโอนเงิน (ประวัติการสั่งซื้อและสถิติยอดขายยังคงอยู่ครบถ้วน)' 
+    : 'ลบข้อมูลออเดอร์และประวัติการสั่งซื้อย้อนหลังทั้งหมดถาวร (ยอดขายช่วงเวลานั้นจะถูกเคลียร์และหายไปจากระบบ)';
+
+  const isConfirmed = confirm(`⚠️ ยืนยันการล้างข้อมูลย้อนหลัง!\n\nต้องการลบข้อมูลที่เก่ากว่า ${days} วัน\nรูปแบบการลบ: ${modeText}\n\nเมื่อกดตกลงแล้ว ระบบจะดำเนินการทันทีและไม่สามารถกู้คืนข้อมูลกลับมาได้!`);
+  
+  if (!isConfirmed) return;
+
+  cleanupDbBtn.disabled = true;
+  cleanupDbBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังล้างข้อมูล...`;
+
+  try {
+    const response = await fetch('/api/admin/cleanup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ days: parseInt(days), mode })
+    });
+
+    const result = await response.json();
+    if (response.ok) {
+      cleanupAlert.style.display = 'flex';
+      setTimeout(() => {
+        cleanupAlert.style.display = 'none';
+      }, 5000);
+
+      // Refresh DB sizes and order history
+      fetchDbSize();
+      fetchOrders(true);
+      renderStats();
+    } else {
+      throw new Error(result.error);
+    }
+  } catch (err) {
+    alert(`เกิดข้อผิดพลาดในการล้างข้อมูล: ${err.message}`);
+  } finally {
+    cleanupDbBtn.disabled = false;
+    cleanupDbBtn.innerHTML = `<i class="fa-solid fa-trash-can"></i> เริ่มล้างข้อมูลคลาวด์`;
   }
 }
 

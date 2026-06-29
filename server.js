@@ -817,6 +817,50 @@ app.get('/api/db-size', async (req, res) => {
   }
 });
 
+// Database Cleanup Tool
+app.post('/api/admin/cleanup', async (req, res) => {
+  const { days, mode } = req.body;
+  const daysNum = parseInt(days);
+
+  if (isNaN(daysNum) || daysNum <= 0) {
+    return res.status(400).json({ error: 'จำนวนวันไม่ถูกต้อง' });
+  }
+
+  if (mode !== 'slips' && mode !== 'all') {
+    return res.status(400).json({ error: 'รูปแบบการลบไม่ถูกต้อง' });
+  }
+
+  try {
+    const cutoffDate = new Date(Date.now() - daysNum * 24 * 60 * 60 * 1000).toISOString();
+
+    if (mode === 'slips') {
+      // Set slip_image to empty string for old orders
+      const { error } = await supabase
+        .from('orders')
+        .update({ slip_image: '' })
+        .lt('timestamp', cutoffDate)
+        .neq('slip_image', '');
+
+      if (error) throw error;
+    } else if (mode === 'all') {
+      // Delete old orders entirely
+      const { error } = await supabase
+        .from('orders')
+        .delete()
+        .lt('timestamp', cutoffDate);
+
+      if (error) throw error;
+    }
+
+    // Sync changes to Google Sheets in background
+    syncAllOrdersToSheets().catch(() => {});
+
+    res.json({ success: true, message: 'ล้างข้อมูลสำเร็จ' });
+  } catch (err) {
+    res.status(500).json({ error: 'ล้างข้อมูลล้มเหลว: ' + err.message });
+  }
+});
+
 // Daily Sales Statistics Summary
 app.get('/api/stats', async (req, res) => {
   try {
