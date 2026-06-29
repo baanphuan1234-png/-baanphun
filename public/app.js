@@ -534,15 +534,15 @@ async function pollOrderStatus() {
   if (!lastOrderId) return;
 
   try {
-    const response = await fetch('/api/orders');
-    const orders = await response.json();
-    const myOrder = orders.find(o => o.id === lastOrderId);
-
-    if (!myOrder) {
-      localStorage.removeItem('lastOrderId');
-      checkExistingOrder();
+    const response = await fetch(`/api/orders/${lastOrderId}`);
+    if (!response.ok) {
+      if (response.status === 404) {
+        localStorage.removeItem('lastOrderId');
+        checkExistingOrder();
+      }
       return;
     }
+    const myOrder = await response.json();
 
     // If order was completed and paid, we can let user clean it or automatically dismiss after a while
     if (myOrder.status === 'completed' && myOrder.paymentStatus === 'paid') {
@@ -570,14 +570,12 @@ async function showOrderStatus() {
   orderStatusModal.classList.add('active');
 
   try {
-    const response = await fetch('/api/orders');
-    const orders = await response.json();
-    const myOrder = orders.find(o => o.id === lastOrderId);
-
-    if (!myOrder) {
+    const response = await fetch(`/api/orders/${lastOrderId}`);
+    if (!response.ok) {
       orderStatusContent.innerHTML = `<p class="text-center text-muted">ไม่พบประวัติออเดอร์นี้</p>`;
       return;
     }
+    const myOrder = await response.json();
 
     renderOrderStatusDetails(myOrder);
   } catch (error) {

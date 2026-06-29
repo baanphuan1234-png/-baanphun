@@ -64,8 +64,8 @@ const readLocal = (filePath) => {
     if (filePath === ORDERS_PATH && inMemoryOrders.length > 0) return inMemoryOrders;
     if (filePath === SETTINGS_PATH && inMemorySettings.promptPayId) {
       return {
-        promptPayId: process.env.PROMPTPAY_ID || inMemorySettings.promptPayId || '',
-        googleSheetsUrl: process.env.GOOGLE_SHEETS_URL || inMemorySettings.googleSheetsUrl || ''
+        promptPayId: inMemorySettings.promptPayId || process.env.PROMPTPAY_ID || '',
+        googleSheetsUrl: inMemorySettings.googleSheetsUrl || process.env.GOOGLE_SHEETS_URL || ''
       };
     }
 
@@ -81,8 +81,8 @@ const readLocal = (filePath) => {
     const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     if (filePath === SETTINGS_PATH) {
       return {
-        promptPayId: process.env.PROMPTPAY_ID || data.promptPayId || '',
-        googleSheetsUrl: process.env.GOOGLE_SHEETS_URL || data.googleSheetsUrl || ''
+        promptPayId: data.promptPayId || process.env.PROMPTPAY_ID || '',
+        googleSheetsUrl: data.googleSheetsUrl || process.env.GOOGLE_SHEETS_URL || ''
       };
     }
     return data;
@@ -92,8 +92,8 @@ const readLocal = (filePath) => {
     if (filePath === ORDERS_PATH) return inMemoryOrders;
     if (filePath === SETTINGS_PATH) {
       return {
-        promptPayId: process.env.PROMPTPAY_ID || inMemorySettings.promptPayId || '',
-        googleSheetsUrl: process.env.GOOGLE_SHEETS_URL || inMemorySettings.googleSheetsUrl || ''
+        promptPayId: inMemorySettings.promptPayId || process.env.PROMPTPAY_ID || '',
+        googleSheetsUrl: inMemorySettings.googleSheetsUrl || process.env.GOOGLE_SHEETS_URL || ''
       };
     }
     return [];
@@ -172,33 +172,27 @@ app.post('/api/settings', (req, res) => {
 
 // Menu Items (Read, Create, Update, Delete)
 app.get('/api/menu', async (req, res) => {
-  const now = Date.now();
-  if (cache.menu.data && (now - cache.menu.timestamp < CACHE_DURATION_MENU)) {
-    return res.json(cache.menu.data);
-  }
-
-  // Try to sync with Google Sheet first
-  const sheetMenu = await syncWithGoogleSheets('getMenu');
-  if (sheetMenu && Array.isArray(sheetMenu)) {
-    // Standardize sheets types
-    const formattedMenu = sheetMenu.map(item => ({
-      id: String(item.id),
-      name: String(item.name),
-      price: parseFloat(item.price) || 0,
-      stock: parseInt(item.stock) || 0,
-      image: String(item.image || ''),
-      hasVariants: item.hasVariants === 'true' || item.hasVariants === true,
-      variants: item.variants ? (typeof item.variants === 'string' ? JSON.parse(item.variants) : item.variants) : []
-    }));
-    writeLocal(MENU_PATH, formattedMenu); // Keep local in sync
-    cache.menu = { data: formattedMenu, timestamp: Date.now() };
-    return res.json(formattedMenu);
-  }
-
-  // Fallback to local
   const localMenu = readLocal(MENU_PATH);
-  cache.menu = { data: localMenu, timestamp: Date.now() };
-  res.json(localMenu);
+  res.json(localMenu); // Respond instantly with local data
+
+  const now = Date.now();
+  if (!cache.menu.data || (now - cache.menu.timestamp >= CACHE_DURATION_MENU)) {
+    syncWithGoogleSheets('getMenu').then(sheetMenu => {
+      if (sheetMenu && Array.isArray(sheetMenu)) {
+        const formattedMenu = sheetMenu.map(item => ({
+          id: String(item.id),
+          name: String(item.name),
+          price: parseFloat(item.price) || 0,
+          stock: parseInt(item.stock) || 0,
+          image: String(item.image || ''),
+          hasVariants: item.hasVariants === 'true' || item.hasVariants === true,
+          variants: item.variants ? (typeof item.variants === 'string' ? JSON.parse(item.variants) : item.variants) : []
+        }));
+        writeLocal(MENU_PATH, formattedMenu);
+        cache.menu = { data: formattedMenu, timestamp: Date.now() };
+      }
+    }).catch(err => console.error("Menu revalidation failed:", err));
+  }
 });
 
 app.post('/api/menu', async (req, res) => {
@@ -221,8 +215,10 @@ app.post('/api/menu', async (req, res) => {
   // Invalidate cache
   cache.menu.timestamp = 0;
   
-  // Sync to Google Sheets
-  await syncWithGoogleSheets('saveMenu', { data: menu });
+  // Sync to Google Sheets in background
+  syncWithGoogleSheets('saveMenu', { data: menu }).catch(err => 
+    console.error("Google Sheets Background Sync Error (saveMenu):", err)
+  );
   
   res.json(newItem);
 });
@@ -252,8 +248,10 @@ app.put('/api/menu/:id', async (req, res) => {
   // Invalidate cache
   cache.menu.timestamp = 0;
   
-  // Sync to Google Sheets
-  await syncWithGoogleSheets('saveMenu', { data: menu });
+  // Sync to Google Sheets in background
+  syncWithGoogleSheets('saveMenu', { data: menu }).catch(err => 
+    console.error("Google Sheets Background Sync Error (saveMenu):", err)
+  );
   
   res.json(menu[itemIndex]);
 });
@@ -268,34 +266,44 @@ app.delete('/api/menu/:id', async (req, res) => {
   // Invalidate cache
   cache.menu.timestamp = 0;
   
-  // Sync to Google Sheets
-  await syncWithGoogleSheets('saveMenu', { data: menu });
+  // Sync to Google Sheets in background
+  syncWithGoogleSheets('saveMenu', { data: menu }).catch(err => 
+    console.error("Google Sheets Background Sync Error (saveMenu):", err)
+  );
   
   res.json({ success: true });
 });
 
 // Orders
 app.get('/api/orders', async (req, res) => {
-  const now = Date.now();
-  if (cache.orders.data && (now - cache.orders.timestamp < CACHE_DURATION_ORDERS)) {
-    return res.json(cache.orders.data);
-  }
-
-  const sheetOrders = await syncWithGoogleSheets('getOrders');
-  if (sheetOrders && Array.isArray(sheetOrders)) {
-    writeLocal(ORDERS_PATH, sheetOrders); // Keep local in sync
-    cache.orders = { data: sheetOrders, timestamp: Date.now() };
-    return res.json(sheetOrders);
-  }
-  
   const localOrders = readLocal(ORDERS_PATH);
-  cache.orders = { data: localOrders, timestamp: Date.now() };
-  res.json(localOrders);
+  res.json(localOrders); // Respond instantly with local data
+
+  const now = Date.now();
+  if (!cache.orders.data || (now - cache.orders.timestamp >= CACHE_DURATION_ORDERS)) {
+    syncWithGoogleSheets('getOrders').then(sheetOrders => {
+      if (sheetOrders && Array.isArray(sheetOrders)) {
+        writeLocal(ORDERS_PATH, sheetOrders);
+        cache.orders = { data: sheetOrders, timestamp: Date.now() };
+      }
+    }).catch(err => console.error("Orders revalidation failed:", err));
+  }
+});
+
+// Get Single Order (for customer status check)
+app.get('/api/orders/:id', (req, res) => {
+  const { id } = req.params;
+  const orders = readLocal(ORDERS_PATH);
+  const order = orders.find(o => o.id === id);
+  if (!order) {
+    return res.status(404).json({ error: 'Order not found' });
+  }
+  res.json(order);
 });
 
 // Create Order (customer adds order)
 app.post('/api/orders', async (req, res) => {
-  const { items, table } = req.body;
+  const { items, table, paymentMethod } = req.body;
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'No items in order' });
   }
@@ -355,9 +363,11 @@ app.post('/api/orders', async (req, res) => {
     return res.status(400).json({ error: `สินค้าหมดหรือสต็อกไม่พอ: ${errorItems.join(', ')}` });
   }
 
-  // Save stock change locally and to sheet
+  // Save stock change locally and to sheet in background
   writeLocal(MENU_PATH, updatedMenu);
-  await syncWithGoogleSheets('saveMenu', { data: updatedMenu });
+  syncWithGoogleSheets('saveMenu', { data: updatedMenu }).catch(err => 
+    console.error("Google Sheets Background Sync Error (saveMenu):", err)
+  );
 
   // Calculate order total
   let total = 0;
@@ -382,6 +392,7 @@ app.post('/api/orders', async (req, res) => {
     status: 'pending', // pending, completed, cancelled
     paymentStatus: 'unpaid', // unpaid, paid
     table: table || 'ทั่วไป',
+    paymentMethod: paymentMethod || 'โอนเงิน',
     slipImage: ''
   };
 
@@ -392,8 +403,10 @@ app.post('/api/orders', async (req, res) => {
   cache.orders.timestamp = 0;
   cache.menu.timestamp = 0;
 
-  // Sync to Google Sheets
-  await syncWithGoogleSheets('saveOrder', { data: newOrder });
+  // Sync to Google Sheets in background
+  syncWithGoogleSheets('saveOrder', { data: newOrder }).catch(err => 
+    console.error("Google Sheets Background Sync Error (saveOrder):", err)
+  );
 
   res.json(newOrder);
 });
@@ -446,7 +459,9 @@ app.put('/api/orders/:id', async (req, res) => {
     });
 
     writeLocal(MENU_PATH, updatedMenu);
-    await syncWithGoogleSheets('saveMenu', { data: updatedMenu });
+    syncWithGoogleSheets('saveMenu', { data: updatedMenu }).catch(err => 
+      console.error("Google Sheets Background Sync Error (saveMenu):", err)
+    );
   }
 
   orders[orderIndex] = {
@@ -470,8 +485,10 @@ app.put('/api/orders/:id', async (req, res) => {
   cache.orders.timestamp = 0;
   cache.menu.timestamp = 0; // stock could return if cancelled
 
-  // Sync to Google Sheets
-  await syncWithGoogleSheets('saveOrder', { data: orders[orderIndex] });
+  // Sync to Google Sheets in background
+  syncWithGoogleSheets('saveOrder', { data: orders[orderIndex] }).catch(err => 
+    console.error("Google Sheets Background Sync Error (saveOrder):", err)
+  );
 
   res.json(orders[orderIndex]);
 });
@@ -487,8 +504,10 @@ app.delete('/api/orders/:id', async (req, res) => {
   // Invalidate cache
   cache.orders.timestamp = 0;
 
-  // Sync to Google Sheets by overwriting orders list
-  await syncWithGoogleSheets('saveOrdersList', { data: orders });
+  // Sync to Google Sheets by overwriting orders list in background
+  syncWithGoogleSheets('saveOrdersList', { data: orders }).catch(err => 
+    console.error("Google Sheets Background Sync Error (saveOrdersList):", err)
+  );
 
   res.json({ success: true });
 });
@@ -603,9 +622,13 @@ app.put('/api/orders/:id/items', async (req, res) => {
   cache.orders.timestamp = 0;
   cache.menu.timestamp = 0;
 
-  // Sync to Google Sheets
-  await syncWithGoogleSheets('saveMenu', { data: updatedMenu });
-  await syncWithGoogleSheets('saveOrder', { data: orders[orderIndex] });
+  // Sync to Google Sheets in background
+  syncWithGoogleSheets('saveMenu', { data: updatedMenu }).catch(err => 
+    console.error("Google Sheets Background Sync Error (saveMenu):", err)
+  );
+  syncWithGoogleSheets('saveOrder', { data: orders[orderIndex] }).catch(err => 
+    console.error("Google Sheets Background Sync Error (saveOrder):", err)
+  );
 
   res.json(orders[orderIndex]);
 });
@@ -702,9 +725,8 @@ app.post('/api/upload', (req, res) => {
 
 // Daily Sales Statistics Summary
 app.get('/api/stats', async (req, res) => {
-  // Sync orders from sheet first
-  const sheetOrders = await syncWithGoogleSheets('getOrders');
-  const orders = (sheetOrders && Array.isArray(sheetOrders)) ? sheetOrders : readLocal(ORDERS_PATH);
+  // Use local orders directly (kept in sync via SWR in the background)
+  const orders = readLocal(ORDERS_PATH);
 
   const stats = {};
   

@@ -245,13 +245,11 @@ function showDashboard(loginWrapper, dashboardLayout) {
   fetchSettings();
   fetchMenu();
   fetchOrders();
-  fetchStats();
 
   // Poll orders & stats every 5 seconds to keep admin updated
   setInterval(() => {
     if (localStorage.getItem('adminToken')) {
-      fetchOrders(true); // silent fetch
-      fetchStats(true);  // silent fetch
+      fetchOrders(true); // silent fetch of orders and stats
     }
   }, 5000);
 }
@@ -477,7 +475,6 @@ async function saveSettings() {
       // Reload everything in case sheet connection changes
       fetchMenu();
       fetchOrders();
-      fetchStats();
     } else {
       throw new Error(result.error);
     }
@@ -725,7 +722,10 @@ async function deleteProduct(id) {
 
 // Fetch Orders Queue
 async function fetchOrders(silent = false) {
-  if (!silent) ordersLoading.style.display = 'block';
+  if (!silent) {
+    ordersLoading.style.display = 'block';
+    if (typeof stockLoading !== 'undefined' && stockLoading) stockLoading.style.display = 'block';
+  }
 
   try {
     const response = await fetch('/api/orders');
@@ -736,10 +736,17 @@ async function fetchOrders(silent = false) {
     
     renderOrdersBoard(orders);
     updateOrderBadges(orders);
+    
+    if (typeof renderStats === 'function') {
+      renderStats();
+    }
   } catch (err) {
     console.error('Error fetching orders:', err);
   } finally {
-    if (!silent) ordersLoading.style.display = 'none';
+    if (!silent) {
+      ordersLoading.style.display = 'none';
+      if (typeof stockLoading !== 'undefined' && stockLoading) stockLoading.style.display = 'none';
+    }
   }
 }
 
@@ -871,7 +878,6 @@ async function updateOrderStatus(orderId, status, paymentStatus) {
     
     // Refresh lists
     fetchOrders(true);
-    fetchStats(true);
     fetchMenu(); // refresh stock numbers
   } catch (err) {
     alert(`อัปเดตออเดอร์ล้มเหลว: ${err.message}`);
@@ -940,22 +946,7 @@ window.viewOrderSlip = function(imageUrl) {
 let selectedStatsDate = null;
 
 async function fetchStats(silent = false) {
-  if (!silent) stockLoading.style.display = 'block';
-  try {
-    const response = await fetch('/api/orders');
-    orders = await response.json();
-    
-    // Sort orders
-    orders.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    
-    renderOrdersBoard(orders);
-    updateOrderBadges(orders);
-    renderStats();
-  } catch (err) {
-    console.error('Error fetching statistics:', err);
-  } finally {
-    if (!silent) stockLoading.style.display = 'none';
-  }
+  return fetchOrders(silent);
 }
 
 function renderStats() {
